@@ -1,0 +1,11 @@
+{
+  "name": "Complexes",
+  "version": "0.0.1",
+  "factorio_version": "1.1",
+  "title": "Complexes",
+  "author": "CircuitFire",
+  "description": "Replaces turret damage research with a flat value.",
+  "dependencies": [
+    "base"
+  ]
+}

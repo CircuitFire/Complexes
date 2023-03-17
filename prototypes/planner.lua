@@ -1,0 +1,40 @@
+data:extend({
+    {
+        type = "selection-tool",
+        name = "complex-planner",
+        icon = "__base__/graphics/icons/assembling-machine-3.png",
+        icon_size = 64,
+        selection_color = {r = 1.0, g = 0.55, b = 0.0, a = 0.2},
+        alt_selection_color = {r = 1.0, g = 0.2, b = 0.0, a = 0.2},
+        selection_mode = {"blueprint"},
+        alt_selection_mode = {"blueprint"},
+        selection_cursor_box_type = "entity",
+        alt_selection_cursor_box_type = "entity",
+        stack_size = 1,
+        flags = {"not-stackable", "mod-openable", "only-in-cursor", "spawnable"},
+    },
+    {
+        type = "shortcut",
+        name = "complex-planner",
+        localised_name = {"item-name.complex-planner"},
+        tooltip = {"item-description.complex-planner"},
+        associated_control_input = "complex-planner",
+        action = "spawn-item",
+        item_to_spawn = "complex-planner",
+        icon = {
+            filename = "__base__/graphics/icons/assembling-machine-3.png",
+            priority = "extra-high-no-scale",
+            size = 64,
+            scale = 1,
+            flags = {"gui-icon"}
+        },
+    },
+    {
+        type = "custom-input",
+        name = "complex-planner",
+        localised_name = {"item-name.complex-planner"},
+        action = "spawn-item",
+        item_to_spawn = "complex-planner",
+        key_sequence = "",
+    },
+})
