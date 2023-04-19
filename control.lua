@@ -2,6 +2,13 @@ require("gui.complex_ui")
 require("gui.mod_ui")
 require("scripts.complex")
 
+require("scripts.complex")
+script.register_metatable("complex-complex", Complex)
+require("scripts.factory")
+script.register_metatable("complex-factory", Factory)
+require("scripts.fuel")
+script.register_metatable("complex-fuel", Fuel)
+
 local function print_ent(entities)
     for index, entity in pairs(entities) do
         -- game.print(entity.name .. "\n  entity: " .. serpent.block(entity.get_recipe()))
@@ -35,12 +42,13 @@ local function init_player(player_index)
         Mod_Ui.add_planner_button(game.get_player(player_index))
 
         global.players[player_index] = {
-            mod = {
-                name = "",
-                complexes = {},
-            },
             complex_window = {},
-            mod_window = {},
+            mod_window = {
+                mod = {
+                    name = "",
+                    complexes = {},
+                },
+            },
         }
     end
 end

@@ -1,146 +1,115 @@
+Complex_Gen = {}
 
----------------------------------------------  Entities  ---------------------------------------------
-local entity_template = table.deepcopy(data.raw["assembling-machine"]["assembling-machine-3"])
-entity_template.fluid_boxes = nil
-entity_template.crafting_categories = nil
-entity_template.module_specification = nil
-entity_template.fast_replaceable_group = nil
-entity_template.crafting_speed = 1
+local function scale_box(entity, type, scale)
+    entity[type][1][1] = entity[type][1][1] * scale
+    entity[type][1][2] = entity[type][1][2] * scale
+    entity[type][2][1] = entity[type][2][1] * scale
+    entity[type][2][2] = entity[type][2][2] * scale
+end
 
-local entity_functions = {
-    name = function(new, input)
-        new.name = input
-        new.crafting_categories = {input}
-        new.minable = {result = input, mining_time = 1}
-    end,
-    size = function(new, input)
-        local x = input[1]/2
-        local y = input[2]/2
+local function scale_animation(animation, scale)
+    local current_scale = animation.scale
+    if current_scale == nil then current_scale = 1 end
+    animation.scale = current_scale * scale
 
-        local box = {
-            {-x, -y},
-            {x, y}
-        }
+    if animation.hr_version ~= nil then
+        local current_scale = animation.hr_version.scale
+        if current_scale == nil then current_scale = 1 end
+        animation.hr_version.scale = current_scale * scale
+    end
+end
 
-        local scale = new.animation.layers[1].scale
-        if scale == nil then scale = 1 end
-        local hr_scale = new.animation.layers[1].hr_version.scale
-        if hr_scale == nil then hr_scale = 1 end
+local function scale_layers(layers, scale)
+    for _, layer in pairs(layers) do
+        scale_animation(layer, scale)
+    end
+end
 
-        local new_scale = (input[1]/3) * scale
-        local new_hr_scale = (input[1]/3) * hr_scale
+function Complex_Gen.scale_graphics(entity, scale)
+    scale_box(entity, "selection_box", scale)
+    scale_box(entity, "drawing_box", scale)
+    entity.collision_box = entity.selection_box
+    entity.collision_box[1][1] = entity.collision_box[1][1] + 0.3
+    entity.collision_box[1][2] = entity.collision_box[1][2] + 0.3
+    entity.collision_box[2][1] = entity.collision_box[2][1] - 0.3
+    entity.collision_box[2][2] = entity.collision_box[2][2] - 0.3
+    -- scale_box(entity, "collision_box", scale)
+    
+    local anim = entity.animation
+    if anim.layers ~= nil then scale_layers(anim.layers, scale) end
+    if anim.east ~= nil   then scale_layers(anim.east.layers, scale) end
+    if anim.north ~= nil  then scale_layers(anim.north.layers, scale) end
+    if anim.south ~= nil  then scale_layers(anim.south.layers, scale) end
+    if anim.west ~= nil   then scale_layers(anim.west.layers, scale) end
 
-        new.drawing_box = box
-        new.selection_box = box
-        new.collision_box = {
-            {0.5-x, 0.5-y},
-            {x-0.5, y-0.5}
-        }
-        new.animation.layers[1].scale = new_scale
-        new.animation.layers[2].scale = new_scale
-        new.animation.layers[1].hr_version.scale = new_hr_scale
-        new.animation.layers[2].hr_version.scale = new_hr_scale
-    end,
-    power = function(new, input)
+    if entity.water_reflection ~= nil then
+        local current_scale = entity.water_reflection.scale
+        if current_scale == nil then current_scale = 1 end
+        entity.water_reflection.scale = current_scale * scale
+    end
 
-    end,
+    if entity.working_visualisations ~= nil then
+        local working = entity.working_visualisations
+        if working.animation ~= nil       then scale_animation(working.animation, scale) end
+        if working.east_animation ~= nil  then scale_animation(working.east_animation, scale) end
+        if working.north_animation ~= nil then scale_animation(working.north_animation, scale) end
+        if working.south_animation ~= nil then scale_animation(working.south_animation, scale) end
+        if working.west_animation ~= nil  then scale_animation(working.west_animation, scale) end
+    end
+end
+
+local north = table.deepcopy(data.raw.pipe.pipe.pictures.straight_vertical)
+north.shift = {0, 1}
+north.priority = "high"
+north.hr_version.shift = {0, 1}
+north.hr_version.priority = "high"
+
+local south = table.deepcopy(data.raw.pipe.pipe.pictures.straight_vertical)
+south.shift = {0, -1}
+south.priority = "high"
+south.hr_version.shift = {0, -1}
+south.hr_version.priority = "high"
+
+local west = table.deepcopy(data.raw.pipe.pipe.pictures.straight_horizontal)
+west.shift = {1, 0}
+west.priority = "high"
+west.hr_version.shift = {1, 0}
+west.hr_version.priority = "high"
+
+local east = table.deepcopy(data.raw.pipe.pipe.pictures.straight_horizontal)
+east.shift = {-1, 0}
+east.priority = "high"
+east.hr_version.shift = {-1, 0}
+east.hr_version.priority = "high"
+
+Complex_Gen.pipe_pictures = {
+    north = north,
+    south = south,
+    west = west,
+    east = east,
 }
 
----------------------------------------------  Items  ---------------------------------------------
-local item_template = table.deepcopy(data.raw["item"]["assembling-machine-3"])
-
-local item_functions = {
-    name = function(new, input)
-        new.name = input
-        new.place_result = input
-    end
-}
-
----------------------------------------------  Recipes  ---------------------------------------------
-local recipe_template = table.deepcopy(data.raw["recipe"]["assembling-machine-3"])
-recipe_template.energy_required = 1
-recipe_template.enabled = true
-recipe_template.category = nil
-recipe_template.ingredients = {}
-recipe_template.results = {}
-
-local function add_to_list(new, input, in_out)
-    if input[in_out] ~= nil then
-        for _, data in pairs(input[in_out]) do
-            table.insert(new[in_out], {type = data.type, name = data.name, amount = data.amount})
-        end
-    end
-end
-
-local recipe_functions = {
-    complex = function(new, input)
-        new.name = input.name
-        if input.time ~= nil then
-            new.energy_required = input.time
-        end
-        new.category = "complexAssembler"
-        new.results = {
-            {type = "item", name = input.name, amount = 1},
-        }
-        add_to_list(new, input, "ingredients")
-    end,
-    recipe = function(new, input)
-        new.name = input.name
-        if input.time ~= nil then
-            new.energy_required = input.time
-        end
-        new.category = input.category
-        add_to_list(new, input, "results")
-        add_to_list(new, input, "ingredients")
-    end
-}
-
----------------------------------------------  Recipe Categories  ---------------------------------------------
-local recipe_category_template = {type = "recipe-category"}
-
-local recipe_category_functions = {
-    name = function(new, input)
-        new.name = input
-    end
-}
-
-
-local function generate(template, functions, input)
-    local new = table.deepcopy(template)
-    local basic = input.basic
-    input.basic = nil
-
-    for index, data in pairs(input) do
-        if functions[index] ~= nil then
-            functions[index](new, data)
-        end
+function Complex_Gen.pipe_connection(input)
+    local base_level
+    if input.type == "input" then
+        base_level = -1
+    else
+        base_level = 1
     end
 
-    if basic ~= nil then
-        for index, data in pairs(basic) do
-            new[index] = data
-        end
+    pipe_connections = {}
+
+    for _, connection in pairs(input.connections) do
+        table.insert(pipe_connections, {type=input.type, position=connection})
     end
 
-    return new
-end
-
-
----------------------------------------------  Public Functions  ---------------------------------------------
-Generate = {}
-
-function Generate.entity(input)
-    return generate(entity_template, entity_functions, input)
-end
-
-function Generate.item(input)
-    return generate(item_template, item_functions, input)
-end
-
-function Generate.recipe(input)
-    return generate(recipe_template, recipe_functions, input)
-end
-
-function Generate.recipe_category(input)
-    return generate(recipe_category_template, recipe_category_functions, input)
+    return {
+        base_area = input.area,
+        base_level = base_level,
+        pipe_connections = pipe_connections,
+        pipe_covers = pipecoverspictures(),
+        pipe_picture = Complex_Gen.pipe_pictures,
+        render_layer = "lower-object-above-shadow",
+        production_type = input.type
+    }
 end

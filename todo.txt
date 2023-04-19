@@ -1,0 +1,6 @@
+
+-fluid temp not accounted for
+-catalyst detection
+-support for non-square buildings
+-support for internal heat
+-importing factory planner/hel mod plans

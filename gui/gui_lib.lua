@@ -5,6 +5,7 @@ Events = {
     selection_state_changed = {},
     elem_changed = {},
     checked_state_changed = {},
+    switch_state_changed = {},
 }
 
 local function handel_event(event, type)
@@ -32,6 +33,10 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
     handel_event(event, "checked_state_changed")
 end)
 
+script.on_event(defines.events.on_gui_switch_state_changed, function(event)
+    handel_event(event, "switch_state_changed")
+end)
+
 Gui_Lib = {}
 
 function Gui_Lib.add_top_bar(parent, window_name)
@@ -53,7 +58,7 @@ function Gui_Lib.close(player_index, window_name)
 
     if window ~= nil then
         window.destroy()
-        global.players[player_index][window_name] = {}
+        global.players[player_index][window_name].window = nil
     end
 end
 
@@ -91,9 +96,31 @@ function Gui_Lib.add_labeled_list(parent, label, func)
     return flow.add{type="list-box", tags={func=func}, style="stretch_box"}
 end
 
-function Gui_Lib.add_labeled_radiobutton(parent, label, tags)
+function Gui_Lib.add_labeled_radiobutton(parent, label, tags, state)
     local flow = parent.add{type="flow", direction="horizontal"}
-    local button = flow.add{type="radiobutton", tags=tags}
+    if state == nil then state = false end
+    local button = flow.add{type="radiobutton", state=state, tags=tags}
     flow.add{type="label", caption={label}}
     return button
+end
+
+function Gui_Lib.error_window(player_index, message)
+    local player = game.get_player(player_index)
+    local player_global = global.players[player_index]
+    size = {900, 300}
+
+    local screen_element = player.gui.screen
+    local complex_window = screen_element.add{type="frame", name="error"}
+    complex_window.auto_center = true
+    complex_window.style.size = size
+
+    player_global["error"] = {
+        window = complex_window
+    }
+
+    message[1] = "complex-error." .. message[1]
+
+    local top_flow = complex_window.add{type="flow", direction="vertical"}
+    top_flow.add{type="label", caption=message, style="frame_title"}
+    top_flow.add{type="button", tags={func="close_button", window="error"}, caption={"complex.close"}}
 end

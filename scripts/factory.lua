@@ -1,4 +1,5 @@
 require("scripts.helper")
+require("scripts.fuel")
 
 --[[
 factory
@@ -10,15 +11,16 @@ factory
         .item_type
         .level
     .power
-        .type = "electric", "burner", "fluid", "heat", "none"
+        .type = "electric", "item", "fluid", "heat", "none"
         .usage
+        .emissions
         .drain           -- only "electric"
-        .fuel_categories -- only "burner"
-        .effectivity     -- only "burner", "fluid"
+        .fuel_categories -- only "item"
+        .effectivity     -- only "item", "fluid"
         .burner          -- only "fluid"
         .filter          -- only "fluid"
         .temp            -- only "fluid"
-        .fuels[sub_recipe][] -> Fuel -- only "burner", "fluid"
+        .fuels[sub_recipe][] -> Fuel -- only "item", "fluid"
     .recipe
         .name
         .time
@@ -83,7 +85,7 @@ local function get_prototype(entity)
 end
 
 local function simplify_power(prototype)
-    local usage = prototype.energy_usage
+    local usage = prototype.energy_usage * 60
     if usage == nil then return {type = "none"} end
 
     local source = prototype.electric_energy_source_prototype
@@ -92,7 +94,8 @@ local function simplify_power(prototype)
         return {
             type = "electric",
             usage = usage,
-            drain = source.drain,
+            emissions = source.emissions * usage * 60,
+            drain = source.drain * 60,
         }
     end
 
@@ -100,8 +103,9 @@ local function simplify_power(prototype)
     if source ~= nil then
 
         return {
-            type = "burner",
+            type = "item",
             usage = usage,
+            emissions = source.emissions * usage * 60,
             fuel_categories = source.fuel_categories,
             effectivity = source.effectivity,
             fuels = {}
@@ -114,6 +118,7 @@ local function simplify_power(prototype)
         return {
             type = "fluid",
             usage = usage,
+            emissions = source.emissions * usage * 60,
             burner = source.burns_fluid,
             filter = source.fluid_box.filter,
             temp = source.maximum_temperature,
@@ -128,6 +133,7 @@ local function simplify_power(prototype)
         return {
             type = "heat",
             usage = usage,
+            emissions = source.emissions * usage * 60,
         }
     end
 
@@ -186,7 +192,7 @@ local function simplify_recipe(recipe)
     return r
 end
 
-local function recipe_data(entity)
+local function recipe_data(entity, power)
     local recipe = entity.get_recipe()
     if recipe ~= nil then
         return simplify_recipe(recipe)
@@ -197,6 +203,14 @@ local function recipe_data(entity)
         if recipe ~= nil then
             return simplify_recipe(recipe)
         end
+    end
+
+    if entity.prototype.type == "boiler" then
+        
+    end
+
+    if entity.prototype.type == "reactor" then
+        
     end
 
     return {
@@ -231,6 +245,10 @@ end
 
 Factory = {}
 
+function Factory.__index(table, index)
+    return getmetatable(table)[index]
+end
+
 function Factory.entity_id(entity)
     local name
     if entity.prototype.type == "entity-ghost" then
@@ -249,7 +267,8 @@ function Factory.entity_id(entity)
 end
 
 function Factory:from_entity(entity, count)
-    local new = table.deepcopy(self)
+    local new = {}
+    setmetatable(new, self)
 
     if count ~= nil then
         new.count = count
@@ -261,7 +280,9 @@ function Factory:from_entity(entity, count)
     new.modules = module_list(entity)
     new.modifiers = calc_modifiers(new.modules)
     new.power = simplify_power(new.prototype)
-    new.recipe = recipe_data(entity)
+    new.recipe = recipe_data(entity, new.power)
+
+    -- game.print("power: " .. serpent.block(new.power))
 
     return new
 end
@@ -287,14 +308,24 @@ function Factory:get_clocked_output_speed()
 end
 
 function Factory:needs_fuel()
-    return self.power.type == "burner" or self.power.type == "fluid"
+    return self.power.type == "item" or self.power.type == "fluid"
 end
 
-function Factory:get_pollution()
-    if self.needs_fuel() then
-        return 0
+function Factory:get_pollution(time, level)
+    local base = self.count * self.modifiers.clock * self.power.emissions * self.modifiers.consumption * self.modifiers.pollution * self.recipe.pollution_mod
+
+    if self:needs_fuel() and level ~= nil then
+        local power = self:fuel_requirement(time)
+        local new = 0
+
+        for _, fuel in pairs(self.fuel_components(level)) do
+            -- add pollution based on the percentage of power that the fuel provides and their pollution modifier.
+            new = new + ((power / fuel:provided_value()) * base * fuel:pollution_mod())
+        end
+
+        return new
     else
-        return self.count * self.modifiers.clock * self.prototype.emissions_per_second * self.modifiers.consumption * self.modifiers.pollution * self.recipe.pollution_mod
+        return base
     end
 end
 
@@ -303,14 +334,14 @@ function Factory:get_power()
 
     if power.type == "electric" then
         return {
-            usage = self.count * self.modifiers.clock * power.usage
-            drain = self.count * self.modifiers.clock * power.drain
+            usage = self.count * self.modifiers.clock * power.usage,
+            drain = self.count * self.modifiers.clock * power.drain,
         }
     end
 
     return {
-        usage = 0
-        drain = 0
+        usage = 0,
+        drain = 0,
     }
 end
 
@@ -392,21 +423,40 @@ function Factory:match_speed(item, time)
     return new_clock
 end
 
-function factory:add_fuel_list()
+function Factory:add_fuel_list()
     if self.power.fuels ~= nil then
         table.insert(self.power.fuels, {})
     end
 end
 
-function factory:get_fuel_list(time, index)
+function Factory:remove_fuel_list(level)
     if self.power.fuels ~= nil then
-        self:fuel_requirement(time)
-        return self.power.fuels[index]
+        table.remove(self.power.fuels, level)
+    end
+end
+
+function Factory:get_fuel_list(time, level)
+    if self.power.fuels ~= nil then
+        self.current_fuel = self:fuel_requirement(time)
+        return self:fuel_components(level)
     end
     return {}
 end
 
 function Factory:fuel_requirement(time)
     local power = self.power
-    self.current_fuel = (self.count * self.modifiers.clock * power.usage) / power.effectivity
+    return (self.count * self.modifiers.clock * power.usage * time) / power.effectivity
+end
+
+function Factory:fuel_components(level)
+    if self.power.fuels[level] == nil then self.power.fuels[level] = {} end
+    return self.power.fuels[level]
+end
+
+function Factory:add_fuel(level, name)
+    table.insert(self.power.fuels[level], Fuel:new(self, name))
+end
+
+function Factory:remove_fuel(level, index)
+    table.remove(self.power.fuels[level], index)
 end

@@ -5,17 +5,21 @@ require("scripts.factory")
 complex
     .name
     .time
-    .fluid_pips[name]
+    .floors
+    .graphics
+    .pipes[name]
         .in_out     -- "input", "output"
+        .index      -- temp value so recipes know the fluid-box index
         .positions[]
             .side   -- "top", "bottom", "left", "right"
-            .number -- starts at top left increases going down/right
+            .offset -- starts at top left increases going down/right
     .factories[name]
     .sub_recipes[]
         .name
         .time
 
 recipe
+    .heat
     .input[name]
         .type
         .amount
@@ -28,6 +32,8 @@ local function filter_entities(entities)
     local proto_filter = {
         ["assembling-machine"] = true,
         ["furnace"]            = true,
+        ["boiler"]             = true,
+        ["reactor"]            = true,
     }
     
     local list = {}
@@ -67,15 +73,22 @@ local function clean_recipe(recipe)
     end
 end
 
-Complex = {
-    name = "",
-    time = 1,
-    factories = {},
-    sub_recipes = {},
-}
+Complex = {}
+
+function Complex.__index(table, index)
+    return getmetatable(table)[index]
+end
 
 function Complex:from_blueprint(entities)
-    local new = table.deepcopy(self)
+    local new = {
+        name = "",
+        time = 1,
+        floors = 1,
+        pipes = {},
+        factories = {},
+        sub_recipes = {},
+    }
+    setmetatable(new, self)
 
     for index, entity in pairs(filter_entities(entities)) do
         local id = Factory.entity_id(entity)
@@ -86,47 +99,34 @@ function Complex:from_blueprint(entities)
         end
     end
 
+    if new:needs_fuel() then
+        new:new_recipe()
+    end
+
     return new
 end
 
-function Complex:fancy_names()
-    local data = {
-        names = {},
-        indexes = {},
-    }
-
-    for factory_name, factory in pairs(self.factories) do
-        local recipe_formatted
-        if factory.recipe.name == "nil" then
-            recipe_formatted = "[virtual-signal=signal-red]"
-        else
-            recipe_formatted = "[recipe=" .. factory.recipe.name .. "]"
-        end
-
-        local name = string.format("[entity=%s] -> %s", factory.prototype.name, recipe_formatted)
-
-        if table_size(factory.modules) ~= 0 then
-            name = name .. " ("
-            for module, count in pairs(factory.modules) do
-                name = name .. " [img=item." .. module .. "]: " .. count
-            end
-            name = name .. " )"
-        end
-        
-        table.insert(data.names, name)
-        table.insert(data.indexes, factory_name)
-    end
-
-    return data
-end
-
-function Complex:get_recipe(index)
+function Complex:get_recipe(index, get_raw, overwrite_time)
     local recipe = {
+        heat = 0,
         input = {},
         output = {},
     }
 
+    local raw
+    if get_raw then
+        raw = {
+            heat = 0,
+            input = {},
+            output = {},
+        }
+    end
+
     local later = {}
+    local time = self.time
+    if overwrite_time then time = overwrite_time end
+
+    if index ~= nil then time = self.sub_recipes[index].time end
     
     for name, factory in pairs(self.factories) do
         local match = factory.match
@@ -135,11 +135,14 @@ function Complex:get_recipe(index)
             if later[match.level] == nil then later[match.level] = {} end
             table.insert(later[match.level], factory)
         else
-            Helper.merge_recipes(recipe, factory:get_recipe(self.time))
+            local temp = factory:get_recipe(time)
+            Helper.merge_recipes(recipe, temp)
+            if get_raw then Helper.merge_recipes(raw, temp) end
         end
 
         if index ~= nil then 
-            for _, fuel in pairs(factory:get_fuel_list(self.time, index)) do
+            for _, fuel in pairs(factory:get_fuel_list(time, index)) do
+                if later[fuel.match.level] == nil then later[fuel.match.level] = {} end
                 table.insert(later[fuel.match.level], fuel)
             end
         end
@@ -159,20 +162,45 @@ function Complex:get_recipe(index)
             local type = flip[match.type]
             local item = recipe[type][match.item_name]
 
-            if factory:match_speed(item, self.time) > 0 then
-                Helper.merge_recipes(recipe, factory:get_recipe(self.time))
+            if factory:match_speed(item, time) > 0 then
+                local temp = factory:get_recipe(time)
+                Helper.merge_recipes(recipe, temp)
+                if get_raw then Helper.merge_recipes(raw, temp) end
+
                 clean_recipe(recipe)
             end
         end
     end
 
+    if get_raw then return recipe, raw end
     return recipe
+end
+
+function Complex:get_recipes()
+    if self:multiple_recipes() then
+        local list = {}
+
+        for index, _ in pairs(self.sub_recipes) do
+            table.insert(list, {index=index, recipe=self.get_recipe(index)})
+        end
+
+        return list
+    else
+        return {{recipe=self:get_recipe()}}
+    end
+end
+
+function Complex:get_recipe_data(index)
+    if index == nil then return {name=self.name.." recipe", time=self.time} end
+    return {name=self.sub_recipes[index].name, time=self.sub_recipes[index].time}
 end
 
 function Complex:get_fluids()
     local fluids = {
         input = {},
         output = {},
+        fuel = {},
+        max_fuels = 0
     }
 
     local recipe = self:get_recipe()
@@ -191,9 +219,17 @@ function Complex:get_fluids()
     for _, factory in pairs(self.factories) do
         if factory.power.type == "fluid" and factory.power.fuels ~= nil then
             for _, level in pairs(factory.power.fuels) do
+                local recipe_fuels = 0
+
                 for _, fuel in pairs(level) do
-                    fluids.input[fuel.prototype.name] = true
+                    if fluids.input[fuel.prototype.name] == nil then
+                        fluids.fuel[fuel.prototype.name] = true
+                    else
+                        recipe_fuels = 1 + recipe_fuels
+                    end
                 end
+
+                if fluids.max_fuels > recipe_fuels then fluids.max_fuels = recipe_fuels end
             end
         end
     end
@@ -201,10 +237,135 @@ function Complex:get_fluids()
     return fluids
 end
 
-function Complex:need_fuels()
+local function init_count(fluids, ranked)
+    for name, _ in pairs(fluids) do
+        table.insert(ranked, {name=name, amount=0})
+    end
+end
+
+local function check_bigger(ranked, recipe)
+    for index, data in pairs(ranked) do
+        if data.amount < recipe[data.name].amount then data.amount = recipe[data.name].amount end
+    end
+end
+
+local function sort_func(a, b)
+    return a.amount > b.amount
+end
+
+function Complex:rank_fluids()
+    local fluids = self:get_fluids()
+    local ranked = {
+        input = {},
+        output = {},
+        fuel = {},
+        max_fuels = fluids.max_fuels
+    }
+
+    init_count(fluids.input, ranked.input)
+    init_count(fluids.output, ranked.output)
+    init_count(fluids.fuel, ranked.fuel)
+
+    local recipes = self:get_recipes()
+
+    check_bigger(ranked.output, recipes[1].recipe.output)
+    for _, recipe in pairs(recipes) do
+        check_bigger(ranked.input, recipe.recipe.input)
+        check_bigger(ranked.fuel, recipe.recipe.input)
+    end
+
+    table.sort(ranked.input, sort_func)
+    table.sort(ranked.output, sort_func)
+    table.sort(ranked.fuel, sort_func)
+
+    return ranked
+end
+
+function Complex:find_free_place(side)
+    local filled = {}
+    local largest = 0
+
+    for _, pipe in pairs(self.pipes) do
+        for _, position in pairs(pipe.positions) do
+            if position.side == side then
+                filled[position.offset] = true
+                if position.offset > largest then largest = position.offset end
+            end
+        end
+    end
+
+    if table_size(filled) == largest then
+        return largest + 1
+    end
+
+    for i=0, largest - 1 do
+        if filled[i] == nil then
+            return i
+        end
+    end
+end
+
+function Complex:init_pipe_config(fluid, in_out)
+    local config = self.pipes[fluid]
+    if config ~= nil then return end
+
+    local side
+    if in_out == "input" then
+        side = "top"
+    else
+        side = "bottom"
+    end
+
+    local offset = self:find_free_place(side)
+
+    self.pipes[fluid] = {
+        in_out = in_out,
+        positions = {
+            {
+                side = side,
+                offset = offset,
+            }
+        },
+    }
+end
+
+function Complex:add_connection(fluid, index)
+    local positions = self.pipes[fluid].positions
+    if index == nil then index = #positions end
+    local side = positions[index].side
+    local offset = self:find_free_place(side)
+
+    table.insert(positions, {side=side, offset=offset})
+end
+
+function Complex:remove_factory(factory)
+    self.factories[factory] = nil
+
+    if self:needs_fuel() == false then
+        self.sub_recipes = {}
+    end
+end
+
+function Complex:remove_connection(fluid, index)
+    local positions = self.pipes[fluid].positions
+    table.remove(positions, index)
+end
+
+function Complex:fuel_factories()
+    local list = {}
+
     for name, factory in pairs(self.factories) do
-        local type = factory.power.type
-        if type == "burner" or type == "fluid" then
+        if factory:needs_fuel() then
+            list[name] = factory
+        end
+    end
+
+    return list
+end
+
+function Complex:needs_fuel()
+    for name, factory in pairs(self.factories) do
+        if factory:needs_fuel() then
             return true
         end
     end
@@ -219,11 +380,11 @@ end
 function Complex:size()
     local factories = {}
     local size = {
-        tiles = 0,
+        area = 0,
         min = {x = 3, y = 3},
     }
 
-    for factory_name, factory in pairs(recipe.factories) do
+    for factory_name, factory in pairs(self.factories) do
         local name = factory.prototype.name
 
         if factories[name] == nil then
@@ -236,36 +397,98 @@ function Complex:size()
             end
         end
 
-        size.tiles = size.tiles + (factories[name].tiles * factory.count)
+        size.area = size.area + (factories[name].area * factory.count)
     end
 
-    local d-- = self.dimensions
-    if d == nil or (d.x * d.y) < size.tiles or d.x < size.min.x or d.y < size.min.y then
-        d = {
-            x = math.ceil(math.sqrt(size.tiles))
-            y = math.ceil(size.tiles / d.x)
-        }
-        --self.dimensions = d
-    end
-
-    size.dimensions = d
+    local x = math.ceil(math.sqrt(size.area / self.floors))
+    size.x = x
+    size.y = x
 
     return size
 end
 
 function Complex:new_recipe()
-    local factory = {
-        name = self.name .. "recipe " .. #self.sub_recipes + 1,
+    local new = {
+        name = self.name .. " recipe " .. #self.sub_recipes + 1,
         time = 1,
-        factories = {},
     }
 
-    table.insert(self.sub_recipes, factory)
+    table.insert(self.sub_recipes, new)
+end
+
+function Complex:remove_recipe(index)
+    for _, factory in pairs(self.factories) do
+        factory:remove_fuel(index)
+    end
+
+    table.remove(self.sub_recipes, index)
+end
+
+function Complex:recipe_logistics(recipe)
+    local logistics = {
+        external = {
+            item = 0,
+            fluid = 0,
+        },
+        internal = {
+            item = 0,
+            fluid = 0,
+        },
+    }
+
+    local clean, raw = self:get_recipe(recipe, true, 1)
+
+    for name, data in pairs(raw.input) do
+        if clean.input[name] ~= nil then
+            logistics.external[data.type] = logistics.external[data.type] + clean.input[name].amount
+            logistics.internal[data.type] = logistics.internal[data.type] + (data.amount - clean.input[name].amount)
+        else
+            logistics.internal[data.type] = logistics.internal[data.type] + data.amount
+        end
+    end
+
+    for name, data in pairs(raw.output) do
+        if clean.output[name] ~= nil then
+            logistics.external[data.type] = logistics.external[data.type] + clean.output[name].amount
+            logistics.internal[data.type] = logistics.internal[data.type] + (data.amount - clean.output[name].amount)
+        else
+            logistics.internal[data.type] = logistics.internal[data.type] + data.amount
+        end
+    end
+
+    return logistics
+end
+
+function Complex:logistics()
+    if self:multiple_recipes() then
+        local logistics = {
+            external = {
+                item = 0,
+                fluid = 0,
+            },
+            internal = {
+                item = 0,
+                fluid = 0,
+            },
+        }
+
+        for index, _ in pairs(self.sub_recipes) do
+            local new = self:recipe_logistics(recipe)
+            if logistics.external.item  < new.external.item  then logistics.external.item  = new.external.item end
+            if logistics.external.fluid < new.external.fluid then logistics.external.fluid = new.external.fluid end
+            if logistics.internal.item  < new.internal.item  then logistics.internal.item  = new.internal.item end
+            if logistics.internal.fluid < new.internal.fluid then logistics.internal.fluid = new.internal.fluid end
+        end
+
+        return logistics
+    else
+        return self:recipe_logistics()
+    end
 end
 
 function Complex:craft()
     local craft = {}
-    local need_fuel = false
+    local needs_fuel = false
 
     for factory_name, factory in pairs(self.factories) do
         if factory:needs_fuel() then needs_fuel = true end
@@ -275,17 +498,76 @@ function Complex:craft()
         end
     end
 
-    if needs_fuel and !self:multiple_recipes() then
-        self:new_recipe()
-    elseif 
-        self.sub_recipes = {}
-    end
+    local size = self:size()
+    local logistics = self:logistics()
+    -- game.print(serpent.block(logistics))
+
+    local structure = settings.global["complex-structure"].value
+    local multiplier = settings.global["complex-structure-floor-multiplier"].value
+    local power = settings.global["complex-power"].value
+    local iil = settings.global["complex-internal-item-logistics"].value
+    local ifl = settings.global["complex-internal-fluid-logistics"].value
+    local eil = settings.global["complex-external-item-logistics"].value
+    local efl = settings.global["complex-external-fluid-logistics"].value
+
+    -- game.print("internal item:" .. tostring(logistics.internal.item / iil))
+    -- game.print("internal fluid:" .. tostring(logistics.internal.fluid / ifl))
+    -- game.print("external item:" .. tostring(logistics.external.item / eil))
+    -- game.print("external fluid:" .. tostring(logistics.external.fluid / efl))
+
+    Helper.add_item_to_list(craft, "complex-structure", {type="item", amount=math.ceil((size.area / structure) * ((multiplier * self.floors) - (multiplier - 1)))})
+    Helper.add_item_to_list(craft, "complex-power", {type="item", amount=math.ceil(size.area / power)})
+    Helper.add_item_to_list(craft, "complex-item-logistics", {type="item", amount=math.ceil((logistics.internal.item / iil) + (logistics.external.item / eil))})
+    Helper.add_item_to_list(craft, "complex-fluid-logistics", {type="item", amount=math.ceil((logistics.internal.fluid / ifl) + (logistics.external.fluid / efl))})
 
     return craft
 end
 
+function Complex:power()
+    local power = {
+        usage = 0,
+        drain = 0
+    }
+
+    for _, factory in pairs(self.factories) do
+        local new = factory:get_power()
+        power.usage = power.usage + new.usage
+        power.drain = power.drain + new.drain
+    end
+
+    return power
+end
+
+function Complex:pollution(level)
+    local total = 0
+    local time = self.time
+    if level ~= nil then time = self.sub_recipes[level].time end
+
+    for _, factory in pairs(self.factories) do
+        total = total + factory:get_pollution(time, level)
+    end
+
+    return total
+end
+
 function Complex:check_complete()
-    if name == nil or name == "" then return false end
+    if self.name == nil or self.name == "" then return false, {"complex-name"} end
+
+    if self.graphics == nil then return false, {"complex-graphics"} end
+
+    if self:multiple_recipes() then
+        local fuel = self:fuel_factories()
+
+        for index, _ in pairs(self.sub_recipes) do
+            self:get_recipe(index)
+
+            for name, factory in pairs(fuel) do
+                if factory.current_fuel ~= 0 then
+                    return false, {"complex-fuel-missing", self.sub_recipes[index].name, name}
+                end
+            end
+        end
+    end
 
     return true
 end
