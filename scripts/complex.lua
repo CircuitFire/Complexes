@@ -9,7 +9,8 @@ complex
     .floors
     .graphics
     .pipes[name]
-        .in_out     -- "input", "output"
+        .in_out      -- "input", "output"
+        .passthrough -- optional overrides in_out
         .positions[]
             .side   -- "top", "bottom", "left", "right"
             .offset -- starts at top left increases going down/right
@@ -155,12 +156,12 @@ function Complex:get_recipes()
         local list = {}
 
         for index, _ in pairs(self.sub_recipes) do
-            table.insert(list, {index=index, recipe=self.get_recipe(index)})
+            table.insert(list, {index=index, recipe=self:get_recipe(index):clean()})
         end
 
         return list
     else
-        return {{recipe=self:get_recipe()}}
+        return {{recipe=self:get_recipe():clean()}}
     end
 end
 
@@ -217,9 +218,9 @@ local function init_count(fluids, ranked)
     end
 end
 
-local function check_bigger(ranked, recipe)
+local function check_bigger(ranked, recipe, in_out)
     for index, data in pairs(ranked) do
-        if data.amount < recipe[data.name].amount then data.amount = recipe[data.name].amount end
+        if data.amount < recipe:amount(in_out, data.name) then data.amount = recipe:amount(in_out, data.name) end
     end
 end
 
@@ -242,10 +243,10 @@ function Complex:rank_fluids()
 
     local recipes = self:get_recipes()
 
-    check_bigger(ranked.output, recipes[1].recipe.output)
+    check_bigger(ranked.output, recipes[1].recipe, "output")
     for _, recipe in pairs(recipes) do
-        check_bigger(ranked.input, recipe.recipe.input)
-        check_bigger(ranked.fuel, recipe.recipe.input)
+        check_bigger(ranked.input, recipe.recipe, "input")
+        check_bigger(ranked.fuel, recipe.recipe, "input")
     end
 
     table.sort(ranked.input, sort_func)
@@ -438,6 +439,8 @@ function Complex:craft()
     local eil = settings.global["complex-external-item-logistics"].value
     local efl = settings.global["complex-external-fluid-logistics"].value
 
+    local hil = settings.global["complex-external-fluid-logistics"].value * 1000000
+
     -- game.print("internal item:" .. tostring(logistics.internal.item / iil))
     -- game.print("internal fluid:" .. tostring(logistics.internal.fluid / ifl))
     -- game.print("external item:" .. tostring(logistics.external.item / eil))
@@ -447,6 +450,7 @@ function Complex:craft()
     Helper.add_item_to_list(craft, "complex-power", {type="item", amount=math.ceil(size.area / power)})
     Helper.add_item_to_list(craft, "complex-item-logistics", {type="item", amount=math.ceil((logistics.internal.item / iil) + (logistics.external.item / eil))})
     Helper.add_item_to_list(craft, "complex-fluid-logistics", {type="item", amount=math.ceil((logistics.internal.fluid / ifl) + (logistics.external.fluid / efl))})
+    Helper.add_item_to_list(craft, "complex-heat-logistics", {type="item", amount=math.ceil((logistics.internal.heat + logistics.internal.heat)/ hil)})
 
     return craft
 end
@@ -478,26 +482,56 @@ function Complex:pollution(level)
     return total
 end
 
-function Complex:check_complete()
-    if self.name == nil or self.name == "" then return false, {"complex-name"} end
+local function heat_check(recipe)
+    if (recipe.input["complex-heat"] ~= nil and recipe.input["complex-heat"].amount > 0) or
+       (recipe.output["complex-heat"] ~= nil and recipe.output["complex-heat"].amount > 0) then 
+        return true, {"complex-heat"}
+    end
+end
 
-    if self.graphics == nil then return false, {"complex-graphics"} end
+local function item_check(recipe)
+    for name, data in pairs(recipe.input) do
+        if data.type == "item" and data.amount ~= math.ceil(data.amount) then
+            return true, {"complex-item-fraction", "input", name}
+        end
+    end
+    for name, data in pairs(recipe.output) do
+        if data.type == "item" and data.amount ~= math.ceil(data.amount) then
+            return true, {"complex-item-fraction", "output", name}
+        end
+    end
+end
+
+function Complex:check_error()
+    if self.name == nil or self.name == "" then return true, {"complex-name"} end
+
+    if self.graphics == nil then return true, {"complex-graphics"} end
+
+    local recipe = self:get_recipe():clean()
+    local er, error = heat_check(recipe)
+    if er then return er, error end
+
+    local er, error = item_check(recipe)
+    if er then return er, error end
 
     if self:multiple_recipes() then
         local fuel = self:fuel_factories()
 
         for index, _ in pairs(self.sub_recipes) do
-            self:get_recipe(index)
+            local recipe = self:get_recipe(index):clean()
+            local er, error = heat_check(recipe)
+            if er then return er, error end
+            
+            local er, error = item_check(recipe)
+            if er then return er, error end
 
             for name, factory in pairs(fuel) do
                 if factory.current_fuel ~= 0 then
-                    return false, {"complex-fuel-missing", self.sub_recipes[index].name, name}
+                    return true, {"complex-fuel-missing", self.sub_recipes[index].name, name}
                 end
             end
         end
     end
-
-    return true
 end
 
 function Complex:internal_name()

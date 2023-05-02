@@ -55,6 +55,9 @@ local function gen_pipe_connection(pipe, size, fluid)
         table.insert(connections, pos)
     end
 
+    local in_out = pipe.in_out
+    if pipe.passthrough then in_out = "input-output" end
+
     return string.format(
 [[%sComplex_Gen.pipe_connection{
     type = "%s",
@@ -62,7 +65,7 @@ local function gen_pipe_connection(pipe, size, fluid)
     connections = %s
 },]],
         "\n",
-        pipe.in_out,
+        in_out,
         (fluid.amount * 2) / 100,
         string.gsub(serpent.block(connections, {indent = '    '}), "\n", "\n    ")
     )
@@ -71,6 +74,11 @@ end
 --wanted this to be like the others but cant because graphics information is not available during run time so it has to be calculated during start up.
 local function gen_entity(complex, name, size, pollution, fluids)
     local power = complex:power()
+    local power_type = "electric"
+    if power.usage == 0 then
+        power.usage = 1
+        power_type = "void"
+    end
     local prototype = game.entity_prototypes[complex.graphics]
 
     local fluid_boxes = ""
@@ -102,7 +110,7 @@ entity.energy_usage = "%sW"
 entity.energy_source = {
     emissions_per_minute = %s,
     drain = "%sW",
-    type = "electric",
+    type = "%s",
     usage_priority = "secondary-input"
 }
 entity.module_specification = nil
@@ -125,6 +133,7 @@ data:extend{entity}
         power.usage,
         pollution,
         power.drain,
+        power_type,
         fluid_boxes,
         size.x / math.ceil(prototype.selection_box.right_bottom.x - prototype.selection_box.left_top.x)
     )
@@ -189,63 +198,46 @@ data:extend{{
     )
 end
 
+local function insert_fluid(recipe, list, input)
+    for _, fluid in pairs(input) do
+        local name = fluid.name
+        local fluid = recipe[name]
+        if fluid ~= nil then
+            for _, temp in pairs(fluid.temps) do
+                table.insert(
+                    list,
+                    {
+                        name=name,
+                        amount=temp.amount,
+                        type=fluid.type,
+                        minimum_temperature=temp.minimum_temperature,
+                        maximum_temperature=temp.maximum_temperature,
+                        temperature=temp.temperature,
+                    }
+                )
+            end
+        end
+    end
+end
+
 local function gen_recipes(name, complex, pollution, fluids, graphics)
     local recipes = ""
 
     for _, recipe in pairs(complex:get_recipes()) do
         local recipe_data = complex:get_recipe_data(recipe.index)
         local recipe = recipe.recipe
-        local new = table.deepcopy(template)
         local input = {}
         local output = {}
 
         --input liquids
-        for _, fluid in pairs(fluids.input) do
-            local temp = recipe.input[fluid.name]
-            if temp ~= nil then
-                table.insert(
-                    input,
-                    {
-                        name=fluid.name,
-                        amount=temp.amount,
-                        type=temp.type,
-                        minimum_temperature=temp.minimum_temperature,
-                        maximum_temperature=temp.maximum_temperature,
-                    }
-                )
-            end
-        end
+        insert_fluid(recipe.input, input, fluids.input)
+
         --input liquid fuels
-        for _, fluid in pairs(fluids.fuel) do
-            local temp = recipe.input[fluid.name]
-            if temp ~= nil then
-                table.insert(
-                    input,
-                    {
-                        name=fluid.name,
-                        amount=temp.amount,
-                        type=temp.type,
-                        minimum_temperature=temp.minimum_temperature,
-                        maximum_temperature=temp.maximum_temperature,
-                    }
-                )
-            end
-        end
+        insert_fluid(recipe.input, input, fluids.fuel)
+
         --output liquids
-        for _, fluid in pairs(fluids.output) do
-            local temp = recipe.output[fluid.name]
-            if temp ~= nil then
-                table.insert(
-                    output,
-                    {
-                        name=fluid.name,
-                        amount=temp.amount,
-                        type=temp.type,
-                        temperature=temp.temperature,
-                    }
-                )
-            end
-        end
+        insert_fluid(recipe.output, output, fluids.output)
+
 
         --rest of inputs
         for name, data in pairs(recipe.input) do
@@ -257,12 +249,13 @@ local function gen_recipes(name, complex, pollution, fluids, graphics)
         end
 
         local icon = "icon = entity.icon"
-        if table_size(recipe.output) > 0 then
+        if next(recipe.output) ~= nil then
             local largest
             local count = 0
             for name, data in pairs(recipe.output) do
-                if count < data.amount then
-                    count = data.amount
+                local amount = recipe:amount("output", name)
+                if count < amount then
+                    count = amount
                     largest = name
                 end
             end

@@ -125,9 +125,9 @@ Events.gui_click.mod_finish = function(event)
     end
 
     for index, complex in pairs(window.mod.complexes) do
-        local complete, error = complex:check_complete()
+        local err, error = complex:check_error()
 
-        if complete == false then
+        if err then
             if error[1] == "complex-name" then
                 table.insert(error, index)
             else

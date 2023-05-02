@@ -31,6 +31,7 @@ data:extend({
     gen_item("complex-power", "__base__/graphics/icons/substation.png"),
     gen_item("complex-item-logistics", "__base__/graphics/icons/express-underground-belt.png"),
     gen_item("complex-fluid-logistics", "__base__/graphics/icons/pump.png"),
+    gen_item("complex-heat-logistics", "__base__/graphics/icons/heat-pipe.png"),
 })
 
 local function gen_recipe(name, inputs)
@@ -116,6 +117,16 @@ data:extend({
             {
                 amount = 10,
                 name = "pipe-to-ground",
+                type = "item"
+            },
+        }
+    ),
+    gen_recipe(
+        "complex-heat-logistics",
+        {
+            {
+                amount = 10,
+                name = "heat-pipe",
                 type = "item"
             },
         }

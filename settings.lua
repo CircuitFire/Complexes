@@ -43,4 +43,11 @@ data:extend({
         setting_type = "runtime-global",
         default_value = 1000,
     },
+
+    {
+        type = "double-setting",
+        name = "complex-internal-heat-logistics",
+        setting_type = "runtime-global",
+        default_value = 40,
+    },
 })

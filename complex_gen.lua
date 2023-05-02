@@ -27,7 +27,7 @@ end
 
 function Complex_Gen.scale_graphics(entity, scale)
     scale_box(entity, "selection_box", scale)
-    scale_box(entity, "drawing_box", scale)
+    if entity["drawing_box"] ~= nil then scale_box(entity, "drawing_box", scale) end
     entity.collision_box = entity.selection_box
     entity.collision_box[1][1] = entity.collision_box[1][1] + 0.3
     entity.collision_box[1][2] = entity.collision_box[1][2] + 0.3
@@ -36,6 +36,10 @@ function Complex_Gen.scale_graphics(entity, scale)
     -- scale_box(entity, "collision_box", scale)
     
     local anim = entity.animation
+    if anim == nil then
+        entity.animation = entity.picture
+        anim = entity.animation
+    end
     if anim.layers ~= nil then scale_layers(anim.layers, scale) end
     if anim.east ~= nil   then scale_layers(anim.east.layers, scale) end
     if anim.north ~= nil  then scale_layers(anim.north.layers, scale) end
@@ -91,16 +95,26 @@ Complex_Gen.pipe_pictures = {
 
 function Complex_Gen.pipe_connection(input)
     local base_level
+    local type
+    local symbol
     if input.type == "input" then
         base_level = -1
+        type = "input"
+        symbol = "input"
+    elseif input.type == "input-output" then
+        base_level = -0.5
+        type = "input"
+        symbol = "input-output"
     else
         base_level = 1
+        type = "output"
+        symbol = "output"
     end
 
     pipe_connections = {}
 
     for _, connection in pairs(input.connections) do
-        table.insert(pipe_connections, {type=input.type, position=connection})
+        table.insert(pipe_connections, {type=symbol, position=connection})
     end
 
     return {
@@ -110,6 +124,6 @@ function Complex_Gen.pipe_connection(input)
         pipe_covers = pipecoverspictures(),
         pipe_picture = Complex_Gen.pipe_pictures,
         render_layer = "lower-object-above-shadow",
-        production_type = input.type
+        production_type = type
     }
 end

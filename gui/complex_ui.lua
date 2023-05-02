@@ -413,6 +413,8 @@ local function pipe_editor(window)
 
     window.pipe_editor_buttons = {}
 
+    Gui_Lib.add_labeled_radiobutton(top, "complex.passthrough", {func="pipe_editor_passthrough_update"})
+
     top.add{type="label", caption={"complex.pipe-editor-side"}}
     window.pipe_editor_buttons.top = Gui_Lib.add_labeled_radiobutton(top, "complex.pipe-editor-top", {func="pipe_editor_side_update", side="top"})
     window.pipe_editor_buttons.left = Gui_Lib.add_labeled_radiobutton(top, "complex.pipe-editor-left", {func="pipe_editor_side_update", side="left"})
@@ -461,6 +463,11 @@ Events.gui_click.pipe_editor_remove_connection = function(event)
 
         update_pipe_selected(window)
     end
+end
+
+Events.checked_state_changed.pipe_editor_side_update = function(event)
+    local window = window(event)
+    get_selected_connection(window).passthrough = event.element.state
 end
 
 Events.checked_state_changed.pipe_editor_side_update = function(event)
@@ -799,17 +806,17 @@ end
 
 Events.gui_click.complex_write = function(event)
     local window = window(event)
-    local complete, error = window.complex:check_complete()
+    local err, error = window.complex:check_error()
 
-    if complete then
+    if err then
+        Gui_Lib.error_window(event.player_index, error)
+    else
         File_Writer.complex(
             event.player_index,
             window.complex
         )
     
         Gui_Lib.close(event.player_index, "complex_window")
-    else
-        Gui_Lib.error_window(event.player_index, error)
     end
 end
 
