@@ -1,5 +1,6 @@
 require("util")
 require("scripts.factory")
+require("scripts.recipe")
 
 --[[
 complex
@@ -9,7 +10,6 @@ complex
     .graphics
     .pipes[name]
         .in_out     -- "input", "output"
-        .index      -- temp value so recipes know the fluid-box index
         .positions[]
             .side   -- "top", "bottom", "left", "right"
             .offset -- starts at top left increases going down/right
@@ -106,27 +106,13 @@ function Complex:from_blueprint(entities)
     return new
 end
 
-function Complex:get_recipe(index, get_raw, overwrite_time)
-    local recipe = {
-        heat = 0,
-        input = {},
-        output = {},
-    }
-
-    local raw
-    if get_raw then
-        raw = {
-            heat = 0,
-            input = {},
-            output = {},
-        }
-    end
+function Complex:get_recipe(index, overwrite_time)
+    local recipe = Recipe:new()
 
     local later = {}
     local time = self.time
-    if overwrite_time then time = overwrite_time end
-
     if index ~= nil then time = self.sub_recipes[index].time end
+    if overwrite_time then time = overwrite_time end
     
     for name, factory in pairs(self.factories) do
         local match = factory.match
@@ -136,8 +122,8 @@ function Complex:get_recipe(index, get_raw, overwrite_time)
             table.insert(later[match.level], factory)
         else
             local temp = factory:get_recipe(time)
-            Helper.merge_recipes(recipe, temp)
-            if get_raw then Helper.merge_recipes(raw, temp) end
+            -- game.print("here: " .. serpent.block(temp.input))
+            recipe:merge(temp)
         end
 
         if index ~= nil then 
@@ -147,32 +133,20 @@ function Complex:get_recipe(index, get_raw, overwrite_time)
             end
         end
     end
-    
-    clean_recipe(recipe)
-
-    local flip = {
-        input = "output",
-        output = "input"
-    }
 
     for _, level in pairs(later) do
         for _, factory in pairs(level) do
             local match = factory.match
-            -- game.print("test: " .. serpent.block(match, {maxlevel=2}))
-            local type = flip[match.type]
-            local item = recipe[type][match.item_name]
+            local item = recipe:get_clean(Recipe.flip(match.in_out), match.get)
 
             if factory:match_speed(item, time) > 0 then
                 local temp = factory:get_recipe(time)
-                Helper.merge_recipes(recipe, temp)
-                if get_raw then Helper.merge_recipes(raw, temp) end
-
-                clean_recipe(recipe)
+                -- game.print("test: " .. serpent.block(temp))
+                recipe:merge(temp)
             end
         end
     end
 
-    if get_raw then return recipe, raw end
     return recipe
 end
 
@@ -203,7 +177,7 @@ function Complex:get_fluids()
         max_fuels = 0
     }
 
-    local recipe = self:get_recipe()
+    local recipe = self:get_recipe():clean()
 
     for name, item in pairs(recipe.input) do
         if item.type == "fluid" then
@@ -424,66 +398,20 @@ function Complex:remove_recipe(index)
     table.remove(self.sub_recipes, index)
 end
 
-function Complex:recipe_logistics(recipe)
-    local logistics = {
-        external = {
-            item = 0,
-            fluid = 0,
-        },
-        internal = {
-            item = 0,
-            fluid = 0,
-        },
-    }
-
-    local clean, raw = self:get_recipe(recipe, true, 1)
-
-    for name, data in pairs(raw.input) do
-        if clean.input[name] ~= nil then
-            logistics.external[data.type] = logistics.external[data.type] + clean.input[name].amount
-            logistics.internal[data.type] = logistics.internal[data.type] + (data.amount - clean.input[name].amount)
-        else
-            logistics.internal[data.type] = logistics.internal[data.type] + data.amount
-        end
-    end
-
-    for name, data in pairs(raw.output) do
-        if clean.output[name] ~= nil then
-            logistics.external[data.type] = logistics.external[data.type] + clean.output[name].amount
-            logistics.internal[data.type] = logistics.internal[data.type] + (data.amount - clean.output[name].amount)
-        else
-            logistics.internal[data.type] = logistics.internal[data.type] + data.amount
-        end
-    end
-
-    return logistics
-end
-
 function Complex:logistics()
-    if self:multiple_recipes() then
-        local logistics = {
-            external = {
-                item = 0,
-                fluid = 0,
-            },
-            internal = {
-                item = 0,
-                fluid = 0,
-            },
-        }
+    local log = self:get_recipe(nil, 1):logistics()
 
-        for index, _ in pairs(self.sub_recipes) do
-            local new = self:recipe_logistics(recipe)
-            if logistics.external.item  < new.external.item  then logistics.external.item  = new.external.item end
-            if logistics.external.fluid < new.external.fluid then logistics.external.fluid = new.external.fluid end
-            if logistics.internal.item  < new.internal.item  then logistics.internal.item  = new.internal.item end
-            if logistics.internal.fluid < new.internal.fluid then logistics.internal.fluid = new.internal.fluid end
-        end
-
-        return logistics
-    else
-        return self:recipe_logistics()
+    for index, _ in pairs(self.sub_recipes) do
+        local new = self:get_recipe(index, 1):logistics()
+        if log.external.item  < new.external.item  then log.external.item  = new.external.item end
+        if log.external.fluid < new.external.fluid then log.external.fluid = new.external.fluid end
+        if log.external.heat < new.external.heat   then log.external.heat = new.external.heat end
+        if log.internal.item  < new.internal.item  then log.internal.item  = new.internal.item end
+        if log.internal.fluid < new.internal.fluid then log.internal.fluid = new.internal.fluid end
+        if log.internal.heat < new.internal.heat   then log.internal.heat = new.internal.heat end
     end
+
+    return log
 end
 
 function Complex:craft()

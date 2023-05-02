@@ -202,17 +202,49 @@ local function gen_recipes(name, complex, pollution, fluids, graphics)
         --input liquids
         for _, fluid in pairs(fluids.input) do
             local temp = recipe.input[fluid.name]
-            if temp ~= nil then table.insert(input, {name=fluid.name, amount=temp.amount, type=temp.type}) end
+            if temp ~= nil then
+                table.insert(
+                    input,
+                    {
+                        name=fluid.name,
+                        amount=temp.amount,
+                        type=temp.type,
+                        minimum_temperature=temp.minimum_temperature,
+                        maximum_temperature=temp.maximum_temperature,
+                    }
+                )
+            end
         end
         --input liquid fuels
         for _, fluid in pairs(fluids.fuel) do
             local temp = recipe.input[fluid.name]
-            if temp ~= nil then table.insert(input, {name=fluid.name, amount=temp.amount, type=temp.type}) end
+            if temp ~= nil then
+                table.insert(
+                    input,
+                    {
+                        name=fluid.name,
+                        amount=temp.amount,
+                        type=temp.type,
+                        minimum_temperature=temp.minimum_temperature,
+                        maximum_temperature=temp.maximum_temperature,
+                    }
+                )
+            end
         end
         --output liquids
         for _, fluid in pairs(fluids.output) do
             local temp = recipe.output[fluid.name]
-            if temp ~= nil then table.insert(output, {name=fluid.name, amount=temp.amount, type=temp.type}) end
+            if temp ~= nil then
+                table.insert(
+                    output,
+                    {
+                        name=fluid.name,
+                        amount=temp.amount,
+                        type=temp.type,
+                        temperature=temp.temperature,
+                    }
+                )
+            end
         end
 
         --rest of inputs

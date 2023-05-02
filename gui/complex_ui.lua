@@ -30,6 +30,10 @@ local function fancy_names(factories)
         local recipe_formatted
         if factory.recipe.name == "nil" then
             recipe_formatted = "[virtual-signal=signal-red]"
+        elseif factory.recipe.name == "nil boiler" then
+            recipe_formatted = "[fluid=" .. next(factory.recipe.output) .. "]"
+        elseif factory.recipe.name == "nil reactor" then
+            recipe_formatted = "[img=tooltip-category-heat]"
         else
             recipe_formatted = "[recipe=" .. factory.recipe.name .. "]"
         end
@@ -87,16 +91,34 @@ local function update_in_out_list(window)
         selected = window.recipe_list.selected_index
     end
 
-    local in_out_list = window.complex:get_recipe(selected)
+    local in_out_list = window.complex:get_recipe(selected):clean()
+
+    -- game.print(serpent.block(in_out_list.input))
 
     input_list.clear_items()
     for name, data in pairs(in_out_list.input) do
-        input_list.add_item("[" .. data.type .. "=" .. name .. "]: " .. data.amount)
+        if data.type == "fluid" then
+            for temp_index, temp in pairs(data.temps) do
+                input_list.add_item("[" .. data.type .. "=" .. name .. "] temp range: (" .. temp_index .. "): " .. temp.amount)
+            end
+        elseif data.type == "heat" then
+            input_list.add_item("[img=tooltip-category-heat]: " .. data.amount/1000000 .. "MW")
+        else
+            input_list.add_item("[" .. data.type .. "=" .. name .. "]: " .. data.amount)
+        end
     end
 
     output_list.clear_items()
     for name, data in pairs(in_out_list.output) do
-        output_list.add_item("[" .. data.type .. "=" .. name .. "]: " .. data.amount)
+        if data.type == "fluid" then
+            for temp_index, temp in pairs(data.temps) do
+                output_list.add_item("[" .. data.type .. "=" .. name .. "] temp range: (" .. temp_index .. "): " .. temp.amount)
+            end
+        elseif data.type == "heat" then
+            output_list.add_item("[img=tooltip-category-heat]: " .. data.amount/1000000 .. "MW")
+        else
+            output_list.add_item("[" .. data.type .. "=" .. name .. "]: " .. data.amount)
+        end
     end
 end
 
@@ -106,10 +128,15 @@ local function normal_filters(window, top, factory)
     local output = {item={}, fluid={}}
 
     for name, data in pairs(factory.recipe.input) do
-        table.insert(input[data.type], name)
+        local type = data.type
+        if type == "heat" then type = "item" end
+        table.insert(input[type], name)
     end
+
     for name, data in pairs(factory.recipe.output) do
-        table.insert(output[data.type], name)
+        local type = data.type
+        if type == "heat" then type = "item" end
+        table.insert(output[type], name)
     end
 
     local current_filter = {
@@ -122,15 +149,15 @@ local function normal_filters(window, top, factory)
         clock.add{type="label", caption={"complex.factory-editor-level"}}
         clock.add{type="textfield", tags={func="factory_editor_level"}, text=tostring(factory.match.level), numeric=true}
 
-        current_filter[factory.match.type][factory.match.item_type] = factory.match.item_name
+        current_filter[factory.match.in_out][factory.match.type] = factory.match.get.name
     end
 
-    if input.item or input.fluid then
+    if next(input.item) or next(input.fluid) then
         local input_box = top.add{type="flow", direction="horizontal"}
         input_box.add{type="label", caption={"complex.factory-editor-match-input"}}
 
-        if input.item then
-            input_box.add{type="label", caption={"complex.factory-editor-match-item"}}
+        if next(input.item) then
+            -- input_box.add{type="label", caption={"complex.factory-editor-match-item"}}
             window.factory_editor_filters.input_item = input_box.add{
                 type="choose-elem-button",
                 tags={func="match_update", type="input"},
@@ -139,8 +166,8 @@ local function normal_filters(window, top, factory)
                 elem_filters={{filter="name", name=input.item}}
             }
         end
-        if input.fluid then
-            input_box.add{type="label", caption={"complex.factory-editor-match-fluid"}}
+        if next(input.fluid) then
+            -- input_box.add{type="label", caption={"complex.factory-editor-match-fluid"}}
             window.factory_editor_filters.input_fluid = input_box.add{
                 type="choose-elem-button",
                 tags={func="match_update", type="input"},
@@ -151,12 +178,12 @@ local function normal_filters(window, top, factory)
         end
     end
     
-    if output.item or output.fluid then
+    if next(output.item) or next(output.fluid) then
         local output_box = top.add{type="flow", direction="horizontal"}
         output_box.add{type="label", caption={"complex.factory-editor-match-output"}}
 
-        if output.item then
-            output_box.add{type="label", caption={"complex.factory-editor-match-item"}}
+        if next(output.item) then
+            -- output_box.add{type="label", caption={"complex.factory-editor-match-item"}}
             window.factory_editor_filters.output_item = output_box.add{
                 type="choose-elem-button",
                 tags={func="match_update", type="output"},
@@ -165,8 +192,8 @@ local function normal_filters(window, top, factory)
                 elem_filters={{filter="name", name=output.item}}
             }
         end
-        if output.fluid then
-            output_box.add{type="label", caption={"complex.factory-editor-match-fluid"}}
+        if next(output.fluid) then
+            -- output_box.add{type="label", caption={"complex.factory-editor-match-fluid"}}
             window.factory_editor_filters.output_fluid = output_box.add{
                 type="choose-elem-button",
                 tags={func="match_update", type="output"},
@@ -176,38 +203,6 @@ local function normal_filters(window, top, factory)
             }
         end
     end
-end
-
-Events.elem_changed.match_update = function(event)
-    local window = window(event)
-    local element = event.element
-    local type = element.tags.type
-    local elem_value = element.elem_value
-
-    for _, elem in pairs(window.factory_editor_filters) do
-        elem.elem_value = nil
-    end
-    element.elem_value = elem_value
-
-    if element.elem_value then
-        local level = 1
-        if window.selected_factory.match ~= nil then
-            level = window.selected_factory.match.level
-        end
-
-        window.selected_factory.match = {
-            type = type,
-            item_name = element.elem_value,
-            item_type = element.elem_type,
-            level = level,
-        }
-    else
-        window.selected_factory.match = nil
-    end
-    
-    update_in_out_list(window)
-    window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
-    factory_editor(window)
 end
 
 local function fuel_filters(window, top, factory)
@@ -273,6 +268,33 @@ local function factory_editor(window)
     top.add{type="button", tags={func="remove_factory"}, caption={"complex.remove"}}
     
     window.factory_editor = top
+end
+
+Events.elem_changed.match_update = function(event)
+    local window = window(event)
+    local element = event.element
+    local in_out = element.tags.type
+    local elem_value = element.elem_value
+
+    for _, elem in pairs(window.factory_editor_filters) do
+        elem.elem_value = nil
+    end
+    element.elem_value = elem_value
+
+    if element.elem_value then
+        local level = 1
+        if window.selected_factory.match ~= nil then
+            level = window.selected_factory.match.level
+        end
+
+        window.selected_factory:set_match(in_out, level, element.elem_value, element.elem_type)
+    else
+        window.selected_factory.match = nil
+    end
+    
+    update_in_out_list(window)
+    window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
+    factory_editor(window)
 end
 
 Events.text_changed.factory_editor_count = function(event)
@@ -646,8 +668,9 @@ end
 
 ---------------------------------------------  Main window Functions  ---------------------------------------------
 local function open_complex(player_index)
+    if global.players[player_index].complex_window.window ~= nil then return end
+    global.players[player_index].complex_window = { complex = global.players[player_index].complex_window.complex }
     local window = global.players[player_index].complex_window
-    if window.window ~= nil then return end
 
     local window_name = "complex_window"
     local top_flow = Gui_Lib.create_window(player_index, window_name)
@@ -674,7 +697,7 @@ local function open_complex(player_index)
         tags={func="graphics_update"},
         elem_type="entity",
         entity=window.complex.graphics,
-        elem_filters={{filter="type", type={"assembling-machine", "furnace"}}}
+        elem_filters={{filter="type", type={"assembling-machine", "furnace", "reactor"}}}
     }
 
     local size = window.complex:size()

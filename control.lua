@@ -8,6 +8,8 @@ require("scripts.factory")
 script.register_metatable("complex-factory", Factory)
 require("scripts.fuel")
 script.register_metatable("complex-fuel", Fuel)
+require("scripts.recipe")
+script.register_metatable("complex-recipe", Recipe)
 
 local function print_ent(entities)
     for index, entity in pairs(entities) do

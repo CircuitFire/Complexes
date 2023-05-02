@@ -1,16 +1,20 @@
-
+require("scripts.recipe")
 --[[
 fuel
     .parent
+    .needed                     -- items required to burn (generated during match_speed)
+    .burner
     .fuel
         .prototype
-        .temperature
-    .needed -- items required to burn
-    .match -- optional "tries to match input or output need of the complex"
-        .type = "input" (match with available fuel item), "output" (match with needed output power)
-        .item_name
-        .item_type
+        .maximum_temperature    -- only fluid
+    .match                      -- optional "tries to match input or output need of the complex"
+        .in_out = "input" (match with available input item), "output" (match with needed output item)
         .level
+        .type                   -- item type
+        .get
+            .name
+            -- one or neither
+            .temp_range
 ]]
 
 Fuel = {}
@@ -29,45 +33,71 @@ function Fuel:new(factory, fuel_name)
         level = factory.match.level + 1
     end
 
+    local get = {
+        name = fuel_name,
+    }
+
     local fuel = {}
     if factory.power.type == "item" then
+        new.burner = true
         fuel.prototype = game.item_prototypes[fuel_name]
     else
+        new.burner = factory.power.burner
         fuel.prototype = game.fluid_prototypes[fuel_name]
-        fuel.temperature = fuel.prototype.default_temperature
+        if new.burner then
+            get.temp_range = {}
+        else
+            fuel.maximum_temperature = factory.power.maximum_temperature
+    
+            get.temp_range = {
+                maximum_temperature = fuel.prototype.default_temperature,
+            }
+        end
     end
 
     new.parent = factory
     new.fuel = fuel
     new.match = {
-        type = "output",
-        item_name = fuel_name,
-        item_type = factory.power.type,
+        in_out = "output",
         level = level,
+        type = factory.power.type,
+        get = get,
     }
     
     return new
 end
 
 function Fuel:get_recipe(time)
-    local input = {}
+    local recipe = Recipe:new()
 
-    input[self.match.item_name] = {
-        type = self.match.item_type,
-        amount = self.needed,
-    }
+    recipe:set(
+        "input", {name = self.match.get.name},
+        {
+            type = self.match.type,
+            amount = self.needed,
+            maximum_temperature = self.fuel.maximum_temperature,
+        }
+    )
 
-    return {
-        input = input,
-        output = {},
-    }
+    local result = self.fuel.prototype.burnt_result
+    if result ~= nil then
+        recipe:set(
+            "output", {name = result.name},
+            {
+                type = "item",
+                amount = self.needed,
+            }
+        )
+    end
+
+    return recipe
 end
 
 function Fuel:value()
-    if self.fuel.prototype.fuel_value > 0 then
+    if self.burner then
         return self.fuel.prototype.fuel_value
     else
-        return self.fuel.temp * self.fuel.heat_capacity
+        return self.match.get.minimum_temperature * self.fuel.heat_capacity
     end
 end
 
@@ -79,7 +109,7 @@ function Fuel:match_speed(item, time)
     local value = self:value()
     local required = self.parent.current_fuel / value
 
-    if self.match.type == "input" and required > amount then
+    if self.match.in_out == "input" and required > amount then
         required = amount
     end
 
@@ -98,6 +128,6 @@ function Fuel:pollution_mod()
 end
 
 function Fuel:name()
-    return string.format("[%s=%s]", self.match.item_type, self.match.item_name)
+    return string.format("[%s=%s]", self.match.type, self.match.get.name)
 end
 

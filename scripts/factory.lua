@@ -1,32 +1,43 @@
 require("scripts.helper")
 require("scripts.fuel")
-
+require("scripts.recipe")
 --[[
 factory
     .count
     .current_fuel -- temp value for calculating 
     .match -- optional "tries to match input or output need of the complex"
-        .type = "input" (match with available input item), "output" (match with needed output item)
-        .item_name
-        .item_type
+        .in_out = "input" (match with available input item), "output" (match with needed output item)
         .level
+        .type
+        .get
+            .name
+            -- one or neither
+            .temp_range
+            .temp
     .power
         .type = "electric", "item", "fluid", "heat", "none"
         .usage
         .emissions
-        .drain           -- only "electric"
-        .fuel_categories -- only "item"
-        .effectivity     -- only "item", "fluid"
-        .burner          -- only "fluid"
-        .filter          -- only "fluid"
-        .temp            -- only "fluid"
+        .drain               -- only "electric"
+        .fuel_categories     -- only "item"
+        .effectivity         -- only "item", "fluid"
+        .burner              -- only "fluid"
+        .filter              -- only "fluid"
+        .maximum_temperature -- only "fluid"
         .fuels[sub_recipe][] -> Fuel -- only "item", "fluid"
     .recipe
         .name
         .time
         .pollution_mod
         .input
+            .type
+            .amount
+            .minimum_temperature
+            .maximum_temperature
         .output
+            .type
+            .amount
+            .temperature
         .catalyst
     .prototype
     .craft
@@ -85,7 +96,7 @@ local function get_prototype(entity)
 end
 
 local function simplify_power(prototype)
-    local usage = prototype.energy_usage * 60
+    local usage = prototype.max_energy_usage * 60
     if usage == nil then return {type = "none"} end
 
     local source = prototype.electric_energy_source_prototype
@@ -121,7 +132,7 @@ local function simplify_power(prototype)
             emissions = source.emissions * usage * 60,
             burner = source.burns_fluid,
             filter = source.fluid_box.filter,
-            temp = source.maximum_temperature,
+            maximum_temperature = source.maximum_temperature,
             effectivity = source.effectivity,
             fuels = {}
         }
@@ -193,27 +204,7 @@ local function simplify_recipe(recipe)
 end
 
 local function recipe_data(entity, power)
-    local recipe = entity.get_recipe()
-    if recipe ~= nil then
-        return simplify_recipe(recipe)
-    end
-
-    if entity.prototype.type == "furnace" then
-        recipe = entity.previous_recipe
-        if recipe ~= nil then
-            return simplify_recipe(recipe)
-        end
-    end
-
-    if entity.prototype.type == "boiler" then
-        
-    end
-
-    if entity.prototype.type == "reactor" then
-        
-    end
-
-    return {
+    local recipe = {
         name = "nil",
         time = 1,
         pollution_mod = 1,
@@ -221,9 +212,71 @@ local function recipe_data(entity, power)
         output = {},
         catalyst = {},
     }
+
+    if entity.prototype.type == "boiler" then
+        local input
+        local output
+        for _, box in pairs(entity.prototype.fluidbox_prototypes) do
+            if box.production_type == "input" or box.production_type == "input-output" then
+                input = box.filter.name
+            elseif box.production_type == "output" then
+                output = box.filter.name
+            end
+        end
+        local input_temp = game.fluid_prototypes[input].default_temperature
+        local output_temp = entity.prototype.target_temperature
+        local heat_capacity = game.fluid_prototypes[output].heat_capacity
+        local heat_amount = entity.prototype.max_energy_usage * 60
+
+        local amount = heat_amount / ((output_temp - input_temp) * heat_capacity)
+
+        recipe.name = "nil boiler"
+        recipe.input[input] = {
+            type = "fluid",
+            amount = amount,
+        }
+        recipe.output[output] = {
+            type = "fluid",
+            amount = amount,
+            temperature = output_temp,
+        }
+        return recipe
+    end
+
+    if entity.prototype.type == "reactor" then
+        recipe.name = "nil reactor"
+        recipe.output["complex-heat"] = {
+            type = "heat",
+            amount = entity.prototype.max_energy_usage * 60
+        }
+
+        return recipe
+    end
+
+    local t_recipe = entity.get_recipe()
+    if t_recipe ~= nil then
+        return simplify_recipe(t_recipe)
+    end
+
+    if entity.prototype.type == "furnace" then
+        t_recipe = entity.previous_recipe
+        if t_recipe ~= nil then
+            return simplify_recipe(t_recipe)
+        end
+    end
+
+    return recipe
 end
 
 local function recipe_name(entity)
+    if entity.prototype.type == "boiler" then
+        return "boiler"
+    end
+
+    if entity.prototype.type == "reactor" then
+        return "reactor"
+    end
+
     local recipe = entity.get_recipe()
     if recipe ~= nil then
         return recipe.name
@@ -236,9 +289,7 @@ local function recipe_name(entity)
         end
     end
 
-    return {
-        recipe = "nil"
-    }
+    return "nil"
 end
 
 ---------------------------------------------  Public Functions  ---------------------------------------------
@@ -266,6 +317,30 @@ function Factory.entity_id(entity)
     return name
 end
 
+function Factory:set_match(in_out, level, item, type)
+    local temp
+    local range
+    if in_out == "output" then
+        temp = self.recipe.output[item].temperature
+    else
+        range = {
+            maximum_temperature = self.recipe.input[item].maximum_temperature,
+            minimum_temperature = self.recipe.input[item].minimum_temperature,
+        }
+    end
+
+    self.match = {
+        in_out = in_out,
+        level = level,
+        type = type,
+        get = {
+            name = item,
+            temp = temp,
+            temp_range = range
+        }
+    }
+end
+
 function Factory:from_entity(entity, count)
     local new = {}
     setmetatable(new, self)
@@ -282,6 +357,13 @@ function Factory:from_entity(entity, count)
     new.power = simplify_power(new.prototype)
     new.recipe = recipe_data(entity, new.power)
 
+    if new.power.type == "heat" then
+        new.recipe.input["complex-heat"] = {
+            type = "heat",
+            amount = new.power.usage
+        }
+    end
+
     -- game.print("power: " .. serpent.block(new.power))
 
     return new
@@ -292,7 +374,7 @@ function Factory:inc_count(count)
 end
 
 function Factory:get_input_speed()
-    return self.count * self.prototype.crafting_speed * self.modifiers.speed
+    return self.count * (self.prototype.crafting_speed or 1) * self.modifiers.speed
 end
 
 function Factory:get_output_speed()
@@ -379,17 +461,44 @@ function Factory:get_recipe(time)
     local in_speed  = (self:get_clocked_input_speed() * time) / self.recipe.time
     local out_speed = (self:get_clocked_output_speed() * time) / self.recipe.time
 
-    local recipe = {
-        input = {},
-        output = {},
-    }
+    local recipe = Recipe:new()
 
     for name, data in pairs(self.recipe.input) do
-        Helper.add_item_to_list(recipe.input, name, {type=data.type, amount=in_speed * data.amount})
+        recipe:set(
+            "input", {name = name},
+            {
+                type=data.type,
+                amount=in_speed * data.amount,
+                minimum_temperature = data.minimum_temperature,
+                maximum_temperature = data.maximum_temperature
+            }
+        )
     end
 
     for name, data in pairs(self.recipe.output) do
-        Helper.add_item_to_list(recipe.output, name, {type=data.type, amount=out_speed * data.amount})
+        recipe:set(
+            "output", {name = name},
+            {
+                type=data.type,
+                amount=out_speed * data.amount,
+                temperature = data.temperature
+            }
+        )
+    end
+
+    if self.prototype.type == "reactor" and self.count >= 2 then
+        local count = self.count
+        local bonus = 3 * (self.count - (4/3))
+        if self.count % 2 == 1 then
+            bonus = bonus - 1
+        end
+        bonus = bonus * self.prototype.neighbour_bonus
+
+        self.count = self.count + bonus
+        local new_speed = (self:get_clocked_output_speed() * time) / self.recipe.time
+        self.count = count
+
+        recipe.output["complex-heat"].amount = self.recipe.output["complex-heat"].amount * new_speed
     end
 
     return recipe
@@ -403,17 +512,17 @@ function Factory:match_speed(item, time)
     end
 
     local amount = item.amount
-    local type = self.match.type
-    local item = self.match.item_name
+    local in_out = self.match.in_out
+    local item = self.match.get.name
     local speed
 
-    if type == "input" then
+    if in_out == "input" then
         speed = (self:get_input_speed() * time) / self.recipe.time
     else
         speed = (self:get_output_speed() * time) / self.recipe.time
     end
 
-    local max = self.recipe[type][item].amount * speed
+    local max = self.recipe[in_out][item].amount * speed
 
     local new_clock = amount / max
 
