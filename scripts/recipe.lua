@@ -406,7 +406,6 @@ local function round_one(list)
     local remove = {}
 
     for i, data in pairs(list) do
-        game.print(serpent.block(data))
         if data.temps then
             local r_temps={}
             for j, temp in pairs(data.temps) do

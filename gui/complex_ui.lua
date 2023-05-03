@@ -107,7 +107,6 @@ local function update_in_out_list(window)
                 input_list.add_item("[" .. data.type .. "=" .. name .. "] temp range: (" .. temp_index .. "): " .. temp.amount)
             end
         elseif data.type == "heat" then
-            game.print(data.amount)
             input_list.add_item("[img=tooltip-category-heat]: " .. data.amount .. "MW")
         else
             input_list.add_item("[" .. data.type .. "=" .. name .. "]: " .. data.amount)
@@ -151,10 +150,6 @@ local function normal_filters(window, top, factory)
     }
 
     if factory.match then
-        local clock = top.add{type="flow", direction="horizontal"}
-        clock.add{type="label", caption={"complex.factory-editor-level"}}
-        clock.add{type="textfield", tags={func="factory_editor_level"}, text=tostring(factory.match.level), numeric=true}
-
         current_filter[factory.match.in_out][factory.match.type] = factory.match.get.name
     end
 
@@ -264,6 +259,12 @@ local function factory_editor(window)
         window.factory_editor_clock = clock.add{type="textfield", tags={func="factory_editor_clock"}, text=tostring(factory.modifiers.clock), numeric=true, allow_decimal=true}
     end
 
+    if factory.match then
+        local clock = top.add{type="flow", direction="horizontal"}
+        clock.add{type="label", caption={"complex.factory-editor-level"}}
+        clock.add{type="textfield", tags={func="factory_editor_level"}, text=tostring(factory.match.level), numeric=true}
+    end
+
     window.factory_editor_filters = {}
     if type == "normal" then
         normal_filters(window, top, factory)
@@ -276,35 +277,6 @@ local function factory_editor(window)
     window.factory_editor = top
 end
 
-Events.elem_changed.match_update = function(event)
-    local window = window(event)
-    local element = event.element
-    local in_out = element.tags.type
-    local elem_value = element.elem_value
-
-    for _, elem in pairs(window.factory_editor_filters) do
-        elem.elem_value = nil
-    end
-    element.elem_value = elem_value
-
-    if element.elem_value then
-        local level = 1
-        if window.selected_factory.match ~= nil then
-            level = window.selected_factory.match.level
-        end
-
-        window.selected_factory:set_match(in_out, level, element.elem_value, element.elem_type)
-    else
-        window.selected_factory.match = nil
-    end
-    
-    update_in_out_list(window)
-    window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
-    factory_editor(window)
-    update_factory_list(window)
-    update_in_out_list(window) -- do it twice to update fuels.
-end
-
 Events.text_changed.factory_editor_count = function(event)
     local window = window(event)
     local number = tonumber(event.element.text)
@@ -314,7 +286,6 @@ Events.text_changed.factory_editor_count = function(event)
     update_in_out_list(window)
     if window.selected_factory.match then
         window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
-        update_in_out_list(window) -- do it twice to update fuels.
     end
 end
 
@@ -325,20 +296,6 @@ Events.text_changed.factory_editor_clock = function(event)
     if number > 1 then number = 1 end
     window.selected_factory.modifiers.clock = number
     update_in_out_list(window)
-end
-
-Events.text_changed.factory_editor_level = function(event)
-    local window = window(event)
-    local number = tonumber(event.element.text)
-    if number == nil then return end
-    if number == 0 then number = 1 end
-    window.selected_factory.match.level = number
-    update_factory_list(window)
-    update_in_out_list(window)
-    if window.selected_factory.match then
-        window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
-        update_in_out_list(window) -- do it twice to update fuels.
-    end
 end
 
 ---------------------------------------------  Pipe Editor Functions  ---------------------------------------------
@@ -547,7 +504,7 @@ local function update_fuel_factory_component_list(window)
 
     window.fuel_factory_component_list.clear_items()
     for i, component in pairs(parent:fuel_components(window.recipe_list.selected_index)) do
-        window.fuel_factory_component_list.add_item(string.format("%s: %s", i, component:name()))
+        window.fuel_factory_component_list.add_item(string.format("level: %s (%s)", component.match.level, component:name()))
     end
 
 end
@@ -575,6 +532,55 @@ local function update_fuel_selector(window)
         elem_filters=filter
     }
     window.add_fuel_box.add{type="button", tags={func="add_fuel_provider"}, caption={"complex.add"}}
+end
+
+Events.elem_changed.match_update = function(event)
+    local window = window(event)
+    local element = event.element
+    local in_out = element.tags.type
+    local elem_value = element.elem_value
+
+    for _, elem in pairs(window.factory_editor_filters) do
+        elem.elem_value = nil
+    end
+    element.elem_value = elem_value
+
+    if element.elem_value then
+        local level = 1
+        if window.selected_factory.match ~= nil then
+            level = window.selected_factory.match.level
+        end
+
+        window.selected_factory:set_match(in_out, level, element.elem_value, element.elem_type)
+    else
+        window.selected_factory.match = nil
+    end
+    
+    update_in_out_list(window)
+    window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
+    factory_editor(window)
+    update_factory_list(window)
+    if window.sub_factory_editor then
+        update_fuel_factory_component_list(window)
+    end
+end
+
+Events.text_changed.factory_editor_level = function(event)
+    local window = window(event)
+    local number = tonumber(event.element.text)
+    if number == nil then return end
+    if number == 0 then number = 1 end
+    
+    if window.selected_factory:set_level(number) then return end
+
+    update_factory_list(window)
+    update_in_out_list(window)
+    if window.selected_factory.match then
+        window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
+    end
+    if window.sub_factory_editor then
+        update_fuel_factory_component_list(window)
+    end
 end
 
 Events.gui_click.add_fuel_provider = function(event)

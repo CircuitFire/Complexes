@@ -535,6 +535,7 @@ function Factory:match_speed(item, time)
     if new_clock > 1 then new_clock = 1 end
 
     self.modifiers.clock = new_clock
+    self.current_fuel = self:fuel_requirement(time)
     return new_clock
 end
 

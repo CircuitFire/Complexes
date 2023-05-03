@@ -115,6 +115,11 @@ function Fuel:match_speed(item, time)
     return self.needed
 end
 
+function Fuel:set_level(new)
+    if new <= ((self.parent.match and self.parent.match.level) or 0) then return true end
+    self.match.level = new
+end
+
 function Fuel:provided_value()
     return self.needed * self:value()
 end
