@@ -11,9 +11,9 @@ factory
         .type
         .get
             .name
-            -- one or neither
-            .temp_range
-            .temp
+            .temperature
+            .maximum_temperature
+            .minimum_temperature
     .power
         .type = "electric", "item", "fluid", "heat", "none"
         .usage
@@ -143,7 +143,7 @@ local function simplify_power(prototype)
 
         return {
             type = "heat",
-            usage = usage,
+            usage = usage/1000000,
             emissions = source.emissions * usage * 60,
         }
     end
@@ -247,7 +247,7 @@ local function recipe_data(entity, power)
         recipe.name = "nil reactor"
         recipe.output["complex-heat"] = {
             type = "heat",
-            amount = entity.prototype.max_energy_usage * 60
+            amount = (entity.prototype.max_energy_usage * 6)/100000
         }
 
         return recipe
@@ -318,27 +318,29 @@ function Factory.entity_id(entity)
 end
 
 function Factory:set_match(in_out, level, item, type)
-    local temp
-    local range
-    if in_out == "output" then
-        temp = self.recipe.output[item].temperature
-    else
-        range = {
-            maximum_temperature = self.recipe.input[item].maximum_temperature,
-            minimum_temperature = self.recipe.input[item].minimum_temperature,
-        }
-    end
-
     self.match = {
         in_out = in_out,
-        level = level,
         type = type,
         get = {
             name = item,
-            temp = temp,
-            temp_range = range
+            temperature = self.recipe.output[item] and self.recipe.output[item].temperature,
+            maximum_temperature = self.recipe.input[item] and self.recipe.input[item].maximum_temperature,
+            minimum_temperature = self.recipe.input[item] and self.recipe.input[item].minimum_temperature,
         }
     }
+    self:set_level(level)
+end
+
+function Factory:set_level(new)
+    local level_change = new - (self.match.level or 0)
+    self.match.level = new
+
+    if self.power.type ~= "item" and self.power.type ~= "fluid" then return end
+    for _, recipe in pairs(self.power.fuels) do
+        for _, fuel in pairs(recipe) do
+            fuel.match.level = fuel.match.level + level_change
+        end
+    end
 end
 
 function Factory:from_entity(entity, count)
@@ -511,20 +513,24 @@ function Factory:match_speed(item, time)
         return self.modifiers.clock
     end
 
-    local amount = item.amount
-    local in_out = self.match.in_out
-    local item = self.match.get.name
-    local speed
+    self.modifiers.clock = 1
 
-    if in_out == "input" then
-        speed = (self:get_input_speed() * time) / self.recipe.time
-    else
-        speed = (self:get_output_speed() * time) / self.recipe.time
-    end
+    -- local amount = item.amount
+    -- local in_out = self.match.in_out
+    -- local item = self.match.get.name
+    -- local speed
 
-    local max = self.recipe[in_out][item].amount * speed
+    -- if in_out == "input" then
+    --     speed = (self:get_input_speed() * time) / self.recipe.time
+    -- else
+    --     speed = (self:get_output_speed() * time) / self.recipe.time
+    -- end
 
-    local new_clock = amount / max
+    local recipe = self:get_recipe(time)
+
+    local max = recipe:get(self.match.in_out, self.match.get).amount
+
+    local new_clock = item.amount / max
 
     if new_clock > 1 then new_clock = 1 end
 
@@ -538,16 +544,16 @@ function Factory:add_fuel_list()
     end
 end
 
-function Factory:remove_fuel_list(level)
+function Factory:remove_fuel_list(recipe)
     if self.power.fuels ~= nil then
-        table.remove(self.power.fuels, level)
+        table.remove(self.power.fuels, recipe)
     end
 end
 
-function Factory:get_fuel_list(time, level)
+function Factory:get_fuel_list(time, recipe)
     if self.power.fuels ~= nil then
         self.current_fuel = self:fuel_requirement(time)
-        return self:fuel_components(level)
+        return self:fuel_components(recipe)
     end
     return {}
 end
@@ -557,16 +563,16 @@ function Factory:fuel_requirement(time)
     return (self.count * self.modifiers.clock * power.usage * time) / power.effectivity
 end
 
-function Factory:fuel_components(level)
-    if self.power.fuels[level] == nil then self.power.fuels[level] = {} end
-    return self.power.fuels[level]
+function Factory:fuel_components(recipe)
+    if self.power.fuels[recipe] == nil then self.power.fuels[recipe] = {} end
+    return self.power.fuels[recipe]
 end
 
-function Factory:add_fuel(level, name)
-    table.insert(self.power.fuels[level], Fuel:new(self, name))
+function Factory:add_fuel(recipe, name)
+    table.insert(self.power.fuels[recipe], Fuel:new(self, name))
 end
 
-function Factory:remove_fuel(level, index)
-    if self.power.fuels == nil or self.power.fuels[level] == nil then return end
-    table.remove(self.power.fuels[level], index)
+function Factory:remove_fuel(recipe, index)
+    if self.power.fuels == nil or self.power.fuels[recipe] == nil then return end
+    table.remove(self.power.fuels[recipe], index)
 end

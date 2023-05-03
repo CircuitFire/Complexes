@@ -85,7 +85,7 @@ end
 local function insert_temp(list, in_out, old, new_amount)
     local insert = table.deepcopy(old)
     insert.amount = new_amount
-    game.print(in_out .. ": " .. Recipe.temp_index(in_out, insert) .. ": " .. insert.amount)
+    -- game.print(in_out .. ": " .. Recipe.temp_index(in_out, insert) .. ": " .. insert.amount)
     list[Recipe.temp_index(in_out, insert)] = insert
 end
 
@@ -195,18 +195,18 @@ function Recipe:get(in_out, get)
         list.amount = self:amount(in_out, get.name)
     else
         if in_out == "input" then
-            if get.temp_range ~= nil then
+            if get.temperature == nil then
                 --copy data
-                for name, info in pairs(item.temps[get.temp_range]) do
+                for name, info in pairs(item.temps[self.temp_index(in_out, get)]) do
                     list[name] = info
                 end
             else
                 list.amount = temp_ranges(item.temps, get.temp)
             end
         else
-            if get.temp ~= nil then
+            if get.temperature ~= nil then
                 --copy data
-                for name, info in pairs(item.temps[get.temp]) do
+                for name, info in pairs(item.temps[self.temp_index(in_out, get)]) do
                     list[name] = info
                 end
             else
@@ -400,4 +400,37 @@ function Recipe:logistics()
     end
 
     return logistics
+end
+
+local function round_one(list)
+    local remove = {}
+
+    for i, data in pairs(list) do
+        game.print(serpent.block(data))
+        if data.temps then
+            local r_temps={}
+            for j, temp in pairs(data.temps) do
+                if temp.amount < 0.00001 then r_temps[j] = true end
+            end
+            if table_size(r_temps) == table_size(data.temps) then
+                remove[i] = true
+            else
+                for j, _ in pairs(r_temps) do
+                    data.temps[j] = nil
+                end
+            end
+        else
+            if data.amount < 0.00001 then remove[i] = true end
+        end
+    end
+
+    for i, _ in pairs(remove) do
+        list[i] = nil
+    end
+end
+
+--round away tiny amounts because they are most likely rounding floating point errors.
+function Recipe:round()
+    round_one(self.input)
+    round_one(self.output)
 end

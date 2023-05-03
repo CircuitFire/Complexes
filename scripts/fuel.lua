@@ -13,8 +13,9 @@ fuel
         .type                   -- item type
         .get
             .name
-            -- one or neither
-            .temp_range
+            .temperature
+            .maximum_temperature
+            .minimum_temperature
 ]]
 
 Fuel = {}
@@ -44,14 +45,9 @@ function Fuel:new(factory, fuel_name)
     else
         new.burner = factory.power.burner
         fuel.prototype = game.fluid_prototypes[fuel_name]
-        if new.burner then
-            get.temp_range = {}
-        else
+        if not new.burner then
             fuel.maximum_temperature = factory.power.maximum_temperature
-    
-            get.temp_range = {
-                maximum_temperature = fuel.prototype.default_temperature,
-            }
+            get.maximum_temperature = fuel.prototype.default_temperature
         end
     end
 

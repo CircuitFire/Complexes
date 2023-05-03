@@ -38,7 +38,12 @@ local function fancy_names(factories)
             recipe_formatted = "[recipe=" .. factory.recipe.name .. "]"
         end
 
-        local name = string.format("[entity=%s] -> %s", factory.prototype.name, recipe_formatted)
+        local level = ""
+        if factory.match ~= nil then
+            level = "Level: " .. factory.match.level
+        end
+
+        local name = string.format("[entity=%s]%s -> %s", factory.prototype.name, level, recipe_formatted)
 
         if table_size(factory.modules) ~= 0 then
             name = name .. " ("
@@ -102,7 +107,8 @@ local function update_in_out_list(window)
                 input_list.add_item("[" .. data.type .. "=" .. name .. "] temp range: (" .. temp_index .. "): " .. temp.amount)
             end
         elseif data.type == "heat" then
-            input_list.add_item("[img=tooltip-category-heat]: " .. data.amount/1000000 .. "MW")
+            game.print(data.amount)
+            input_list.add_item("[img=tooltip-category-heat]: " .. data.amount .. "MW")
         else
             input_list.add_item("[" .. data.type .. "=" .. name .. "]: " .. data.amount)
         end
@@ -115,7 +121,7 @@ local function update_in_out_list(window)
                 output_list.add_item("[" .. data.type .. "=" .. name .. "] temp range: (" .. temp_index .. "): " .. temp.amount)
             end
         elseif data.type == "heat" then
-            output_list.add_item("[img=tooltip-category-heat]: " .. data.amount/1000000 .. "MW")
+            output_list.add_item("[img=tooltip-category-heat]: " .. data.amount .. "MW")
         else
             output_list.add_item("[" .. data.type .. "=" .. name .. "]: " .. data.amount)
         end
@@ -295,6 +301,8 @@ Events.elem_changed.match_update = function(event)
     update_in_out_list(window)
     window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
     factory_editor(window)
+    update_factory_list(window)
+    update_in_out_list(window) -- do it twice to update fuels.
 end
 
 Events.text_changed.factory_editor_count = function(event)
@@ -304,6 +312,10 @@ Events.text_changed.factory_editor_count = function(event)
     window.selected_factory.count = number
     update_craft_list(window)
     update_in_out_list(window)
+    if window.selected_factory.match then
+        window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
+        update_in_out_list(window) -- do it twice to update fuels.
+    end
 end
 
 Events.text_changed.factory_editor_clock = function(event)
@@ -321,7 +333,12 @@ Events.text_changed.factory_editor_level = function(event)
     if number == nil then return end
     if number == 0 then number = 1 end
     window.selected_factory.match.level = number
+    update_factory_list(window)
     update_in_out_list(window)
+    if window.selected_factory.match then
+        window.factory_editor_clock.text = tostring(window.selected_factory.modifiers.clock)
+        update_in_out_list(window) -- do it twice to update fuels.
+    end
 end
 
 ---------------------------------------------  Pipe Editor Functions  ---------------------------------------------
@@ -778,7 +795,7 @@ Events.text_changed.update_complex_speed = function(event)
         end
     end
 
-    if number == nil or number < 1/60 then number = 1 end
+    if number == nil or number < 1/60 or number == math.huge then number = 1 end
 
     selected_recipe(window).time = number
     update_in_out_list(window)

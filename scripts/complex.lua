@@ -148,6 +148,7 @@ function Complex:get_recipe(index, overwrite_time)
         end
     end
 
+    recipe:round()
     return recipe
 end
 

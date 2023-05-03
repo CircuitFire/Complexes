@@ -280,7 +280,7 @@ local function gen_recipes(name, complex, pollution, fluids, graphics)
         results = %s
     },
 ]],
-            "complex-" .. string.gsub(recipe_data.name, " ", "-"),
+            complex:internal_name() .. "-" .. string.gsub(recipe_data.name, " ", "-"),
             icon,
             recipe_data.time,
             complex:pollution(recipe.index) / pollution,
