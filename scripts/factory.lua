@@ -567,5 +567,6 @@ function Factory:add_fuel(level, name)
 end
 
 function Factory:remove_fuel(level, index)
+    if self.power.fuels == nil or self.power.fuels[level] == nil then return end
     table.remove(self.power.fuels[level], index)
 end

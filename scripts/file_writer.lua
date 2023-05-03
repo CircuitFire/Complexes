@@ -56,16 +56,18 @@ local function gen_pipe_connection(pipe, size, fluid)
     end
 
     local in_out = pipe.in_out
-    if pipe.passthrough then in_out = "input-output" end
+    local passthrough = ""
+    if pipe.passthrough then passthrough = "\n    passthrough = true," end
 
     return string.format(
 [[%sComplex_Gen.pipe_connection{
-    type = "%s",
+    type = "%s",%s
     base_area = %s,
     connections = %s
 },]],
         "\n",
         in_out,
+        passthrough,
         (fluid.amount * 2) / 100,
         string.gsub(serpent.block(connections, {indent = '    '}), "\n", "\n    ")
     )

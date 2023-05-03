@@ -355,14 +355,16 @@ end
 local function update_pipe_editor(window)
     local data = get_selected_pipe(window)
 
+    window.passthrough_button.state = data.passthrough
+
     window.pipe_editor_selector.clear_items()
     for i, _ in pairs(data.positions) do
         window.pipe_editor_selector.add_item(tostring(i))
     end
     window.pipe_editor_selector.selected_index = 1
 
-    update_pipe_side(window, data.positions[1].side)
-    window.pipe_editor_position.text = tostring(data.positions[1].offset)
+    update_pipe_side(window, get_selected_connection(window).side)
+    window.pipe_editor_position.text = tostring(get_selected_connection(window).offset)
 end
 
 local function pipe_editor(window)
@@ -413,7 +415,7 @@ local function pipe_editor(window)
 
     window.pipe_editor_buttons = {}
 
-    Gui_Lib.add_labeled_radiobutton(top, "complex.passthrough", {func="pipe_editor_passthrough_update"})
+    window.passthrough_button = Gui_Lib.add_labeled_radiobutton(top, "complex.passthrough", {func="pipe_editor_passthrough_update"})
 
     top.add{type="label", caption={"complex.pipe-editor-side"}}
     window.pipe_editor_buttons.top = Gui_Lib.add_labeled_radiobutton(top, "complex.pipe-editor-top", {func="pipe_editor_side_update", side="top"})
@@ -422,7 +424,7 @@ local function pipe_editor(window)
     window.pipe_editor_buttons.bottom = Gui_Lib.add_labeled_radiobutton(top, "complex.pipe-editor-bottom", {func="pipe_editor_side_update", side="bottom"})
 
     top.add{type="label", caption={"complex.pipe-editor-position"}}
-    window.pipe_editor_position = top.add{type="textfield", style="stretchable_textfield", text="fix me!", {func="pipe_editor_position_update"}, numeric=true}
+    window.pipe_editor_position = top.add{type="textfield", style="stretchable_textfield", text="fix me!", tags={func="pipe_editor_position_update"}, numeric=true}
 
     update_pipe_editor(window)
 end
@@ -465,9 +467,9 @@ Events.gui_click.pipe_editor_remove_connection = function(event)
     end
 end
 
-Events.checked_state_changed.pipe_editor_side_update = function(event)
+Events.checked_state_changed.pipe_editor_passthrough_update = function(event)
     local window = window(event)
-    get_selected_connection(window).passthrough = event.element.state
+    get_selected_pipe(window).passthrough = event.element.state
 end
 
 Events.checked_state_changed.pipe_editor_side_update = function(event)
@@ -484,7 +486,7 @@ Events.text_changed.pipe_editor_position_update = function(event)
     if number == nil then return end
 
     local pipe = get_selected_connection(window)
-    pipe.position = number
+    pipe.offset = number
 end
 
 ---------------------------------------------  Alt Recipe Functions  ---------------------------------------------
@@ -494,6 +496,7 @@ local function init_recipe_list(window)
     end
 
     window.recipe_list.selected_index = 1
+    update_in_out_list(window)
 end
 
 local function init_fuel_factory_list(window)
@@ -632,27 +635,28 @@ end
 Events.selection_state_changed.recipe_list_select = function(event)
     local window = window(event)
     update_fuel_factory_component_list(window)
+    update_in_out_list(window)
 end
 
 Events.gui_click.add_recipe = function(event)
     local window = window(event)
-    window.complex:add_recipe()
+    window.complex:new_recipe()
 
-    local index = window.fuel_factory_list.selected_index
-    window.fuel_factory_list.add_item(name)
-    window.fuel_factory_list.selected_index = index
+    local index = window.recipe_list.selected_index + 1
+    window.recipe_list.add_item(window.complex.sub_recipes[index].name)
+    window.recipe_list.selected_index = index
 end
 
 Events.gui_click.remove_recipe = function(event)
     local window = window(event)
-    if #window.fuel_factory_list == 1 then return end
+    if #window.recipe_list == 1 then return end
 
-    local index = window.fuel_factory_list.selected_index
+    local index = window.recipe_list.selected_index
     window.complex:remove_recipe(index)
-    window.fuel_factory_list.remove_item(index)
+    window.recipe_list.remove_item(index)
 
     if index ~= 1 then index = index - 1 end
-    window.fuel_factory_list.selected_index = index
+    window.recipe_list.selected_index = index
     update_fuel_factory_component_list(window)
 end
 
@@ -748,6 +752,7 @@ local function open_complex(player_index)
 
     local bottom_bar = top_flow.add{type="flow", direction="horizontal"}
     bottom_bar.add{type="empty-widget", style="top_bar_fill"}
+    bottom_bar.add{type="button", tags={func="complex_test"}, caption={"complex.test"}}
     bottom_bar.add{type="button", tags={func="complex_write"}, caption={"complex.write"}}
     bottom_bar.add{type="button", tags={func="complex_finish"}, caption={"complex.finish"}}
 end
@@ -817,6 +822,15 @@ Events.gui_click.complex_write = function(event)
         )
     
         Gui_Lib.close(event.player_index, "complex_window")
+    end
+end
+
+Events.gui_click.complex_test = function(event)
+    local window = window(event)
+    local err, error = window.complex:check_error()
+
+    if err then
+        Gui_Lib.error_window(event.player_index, error)
     end
 end
 

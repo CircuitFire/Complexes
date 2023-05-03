@@ -273,7 +273,7 @@ function Complex:find_free_place(side)
         return largest + 1
     end
 
-    for i=0, largest - 1 do
+    for i = 1, largest - 1 do
         if filled[i] == nil then
             return i
         end
@@ -384,7 +384,7 @@ end
 
 function Complex:new_recipe()
     local new = {
-        name = self.name .. " recipe " .. #self.sub_recipes + 1,
+        name = "recipe " .. #self.sub_recipes + 1,
         time = 1,
     }
 
@@ -438,8 +438,7 @@ function Complex:craft()
     local ifl = settings.global["complex-internal-fluid-logistics"].value
     local eil = settings.global["complex-external-item-logistics"].value
     local efl = settings.global["complex-external-fluid-logistics"].value
-
-    local hil = settings.global["complex-external-fluid-logistics"].value * 1000000
+    local hil = settings.global["complex-internal-heat-logistics"].value * 1000000
 
     -- game.print("internal item:" .. tostring(logistics.internal.item / iil))
     -- game.print("internal fluid:" .. tostring(logistics.internal.fluid / ifl))
@@ -450,7 +449,7 @@ function Complex:craft()
     Helper.add_item_to_list(craft, "complex-power", {type="item", amount=math.ceil(size.area / power)})
     Helper.add_item_to_list(craft, "complex-item-logistics", {type="item", amount=math.ceil((logistics.internal.item / iil) + (logistics.external.item / eil))})
     Helper.add_item_to_list(craft, "complex-fluid-logistics", {type="item", amount=math.ceil((logistics.internal.fluid / ifl) + (logistics.external.fluid / efl))})
-    Helper.add_item_to_list(craft, "complex-heat-logistics", {type="item", amount=math.ceil((logistics.internal.heat + logistics.internal.heat)/ hil)})
+    Helper.add_item_to_list(craft, "complex-heat-logistics", {type="item", amount=math.ceil(((logistics.internal.heat / 2) + logistics.external.heat)/ hil)})
 
     return craft
 end
@@ -502,6 +501,37 @@ local function item_check(recipe)
     end
 end
 
+function Complex:pipe_collision(used, name)
+    for i, info in pairs(self.pipes[name].positions) do
+        if not used[info.side][info.offset] then
+            used[info.side][info.offset] = {name=name, connection=i}
+        else
+            local temp = used[info.side][info.offset]
+            return true, {"complex-collision", temp.name, temp.connection, name, i}
+        end
+    end
+end
+
+function Complex:pipe_collisions()
+    local fluids = self:rank_fluids()
+    local used = {
+        top={}, bottom={}, left={}, right={}
+    }
+
+    for _, data in pairs(fluids.input) do
+        local er, error = self:pipe_collision(used, data.name)
+        if er then return er, error end
+    end
+    for _, data in pairs(fluids.output) do
+        local er, error = self:pipe_collision(used, data.name)
+        if er then return er, error end
+    end
+    for i = 1, fluids.max_fuels do
+        local er, error = self:pipe_collision(used, "Fuel Input #"..i)
+        if er then return er, error end
+    end
+end
+
 function Complex:check_error()
     if self.name == nil or self.name == "" then return true, {"complex-name"} end
 
@@ -532,6 +562,8 @@ function Complex:check_error()
             end
         end
     end
+
+    return self:pipe_collisions()
 end
 
 function Complex:internal_name()

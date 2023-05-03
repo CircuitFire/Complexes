@@ -62,25 +62,25 @@ function Complex_Gen.scale_graphics(entity, scale)
     end
 end
 
-local north = table.deepcopy(data.raw.pipe.pipe.pictures.straight_vertical)
+local north = table.deepcopy(data.raw["pipe-to-ground"]["pipe-to-ground"].pictures.up)
 north.shift = {0, 1}
 north.priority = "high"
 north.hr_version.shift = {0, 1}
 north.hr_version.priority = "high"
 
-local south = table.deepcopy(data.raw.pipe.pipe.pictures.straight_vertical)
+local south = table.deepcopy(data.raw["pipe-to-ground"]["pipe-to-ground"].pictures.down)
 south.shift = {0, -1}
 south.priority = "high"
 south.hr_version.shift = {0, -1}
 south.hr_version.priority = "high"
 
-local west = table.deepcopy(data.raw.pipe.pipe.pictures.straight_horizontal)
+local west = table.deepcopy(data.raw["pipe-to-ground"]["pipe-to-ground"].pictures.left)
 west.shift = {1, 0}
 west.priority = "high"
 west.hr_version.shift = {1, 0}
 west.hr_version.priority = "high"
 
-local east = table.deepcopy(data.raw.pipe.pipe.pictures.straight_horizontal)
+local east = table.deepcopy(data.raw["pipe-to-ground"]["pipe-to-ground"].pictures.right)
 east.shift = {-1, 0}
 east.priority = "high"
 east.hr_version.shift = {-1, 0}
@@ -95,20 +95,19 @@ Complex_Gen.pipe_pictures = {
 
 function Complex_Gen.pipe_connection(input)
     local base_level
-    local type
     local symbol
+    
     if input.type == "input" then
         base_level = -1
-        type = "input"
         symbol = "input"
-    elseif input.type == "input-output" then
-        base_level = -0.5
-        type = "input"
-        symbol = "input-output"
     else
         base_level = 1
-        type = "output"
         symbol = "output"
+    end
+
+    if input.passthrough then
+        base_level = 0
+        symbol = "input-output"
     end
 
     pipe_connections = {}
@@ -124,6 +123,6 @@ function Complex_Gen.pipe_connection(input)
         pipe_covers = pipecoverspictures(),
         pipe_picture = Complex_Gen.pipe_pictures,
         render_layer = "lower-object-above-shadow",
-        production_type = type
+        production_type = input.type
     }
 end
