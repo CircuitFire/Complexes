@@ -1,4 +1,3 @@
 
 -catalyst detection
--support for non-square buildings
 -importing hel mod strings

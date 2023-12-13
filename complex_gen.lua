@@ -19,15 +19,26 @@ local function scale_animation(animation, scale)
     end
 end
 
-local function scale_layers(layers, scale)
-    for _, layer in pairs(layers) do
-        scale_animation(layer, scale)
+local function scale_layers(anim, scale)
+    if anim.layers then
+        for _, layer in pairs(anim.layers) do
+            scale_animation(layer, scale)
+        end
+    else
+        scale_animation(anim, scale)
     end
 end
 
-function Complex_Gen.scale_graphics(entity, scale)
-    scale_box(entity, "selection_box", scale)
+function Complex_Gen.scale_graphics(entity, size)
+    local scale = size.x / math.ceil(entity.selection_box[2][1] - entity.selection_box[1][1])
+
     if entity["drawing_box"] ~= nil then scale_box(entity, "drawing_box", scale) end
+
+    entity.selection_box[2][1] = size.x / 2
+    entity.selection_box[2][2] = size.y / 2
+    entity.selection_box[1][1] = -entity.selection_box[2][1]
+    entity.selection_box[1][2] = -entity.selection_box[2][2]
+    
     entity.collision_box = entity.selection_box
     entity.collision_box[1][1] = entity.collision_box[1][1] + 0.3
     entity.collision_box[1][2] = entity.collision_box[1][2] + 0.3
@@ -36,29 +47,29 @@ function Complex_Gen.scale_graphics(entity, scale)
     -- scale_box(entity, "collision_box", scale)
     
     local anim = entity.animation
-    if anim == nil then
+    if not anim then
         entity.animation = entity.picture
         anim = entity.animation
     end
-    if anim.layers ~= nil then scale_layers(anim.layers, scale) end
-    if anim.east ~= nil   then scale_layers(anim.east.layers, scale) end
-    if anim.north ~= nil  then scale_layers(anim.north.layers, scale) end
-    if anim.south ~= nil  then scale_layers(anim.south.layers, scale) end
-    if anim.west ~= nil   then scale_layers(anim.west.layers, scale) end
+    if anim.layers or anim.size then scale_layers(anim, scale) end
+    if anim.east                then scale_layers(anim.east, scale) end
+    if anim.north               then scale_layers(anim.north, scale) end
+    if anim.south               then scale_layers(anim.south, scale) end
+    if anim.west                then scale_layers(anim.west, scale) end
 
-    if entity.water_reflection ~= nil then
+    if entity.water_reflection then
         local current_scale = entity.water_reflection.scale
-        if current_scale == nil then current_scale = 1 end
+        if not current_scale then current_scale = 1 end
         entity.water_reflection.scale = current_scale * scale
     end
 
     if entity.working_visualisations ~= nil then
         local working = entity.working_visualisations
-        if working.animation ~= nil       then scale_animation(working.animation, scale) end
-        if working.east_animation ~= nil  then scale_animation(working.east_animation, scale) end
-        if working.north_animation ~= nil then scale_animation(working.north_animation, scale) end
-        if working.south_animation ~= nil then scale_animation(working.south_animation, scale) end
-        if working.west_animation ~= nil  then scale_animation(working.west_animation, scale) end
+        if working.animation        then scale_animation(working.animation, scale) end
+        if working.east_animation   then scale_animation(working.east_animation, scale) end
+        if working.north_animation  then scale_animation(working.north_animation, scale) end
+        if working.south_animation  then scale_animation(working.south_animation, scale) end
+        if working.west_animation   then scale_animation(working.west_animation, scale) end
     end
 end
 
@@ -125,4 +136,8 @@ function Complex_Gen.pipe_connection(input)
         render_layer = "lower-object-above-shadow",
         production_type = input.type
     }
+end
+
+function Complex_Gen.update_complex_assembler(recipe)
+
 end

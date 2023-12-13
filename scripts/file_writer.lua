@@ -34,7 +34,7 @@ local function write_local(player, complexes, path, filename)
     new_file(player, path .. filename .. ".cfg", write)
 end
 
-local function gen_pipe_connection(pipe, size, fluid)
+local function gen_pipe_connection(pipe, size, fluid, in_out)
     local width = (size.x / 2) + 0.5
     local hight = (size.y / 2) + 0.5
 
@@ -55,9 +55,12 @@ local function gen_pipe_connection(pipe, size, fluid)
         table.insert(connections, pos)
     end
 
-    local in_out = pipe.in_out
     local passthrough = ""
-    if pipe.passthrough then passthrough = "\n    passthrough = true," end
+    local div = 100
+    if pipe.passthrough then
+        passthrough = "\n    passthrough = true,"
+        div = 75
+    end
 
     return string.format(
 [[%sComplex_Gen.pipe_connection{
@@ -68,7 +71,7 @@ local function gen_pipe_connection(pipe, size, fluid)
         "\n",
         in_out,
         passthrough,
-        (fluid.amount * 2) / 100,
+        (fluid.amount * 2) / div,
         string.gsub(serpent.block(connections, {indent = '    '}), "\n", "\n    ")
     )
 end
@@ -86,13 +89,13 @@ local function gen_entity(complex, name, size, pollution, fluids)
     local fluid_boxes = ""
 
     for _, data in pairs(fluids.input) do
-        fluid_boxes = fluid_boxes .. string.gsub(gen_pipe_connection(complex.pipes[data.name], size, data), "\n", "\n    ")
+        fluid_boxes = fluid_boxes .. string.gsub(gen_pipe_connection(complex.pipes[data.name], size, data, "input"), "\n", "\n    ")
     end
     for _, data in pairs(fluids.output) do
-        fluid_boxes = fluid_boxes .. string.gsub(gen_pipe_connection(complex.pipes[data.name], size, data), "\n", "\n    ")
+        fluid_boxes = fluid_boxes .. string.gsub(gen_pipe_connection(complex.pipes[data.name], size, data, "output"), "\n", "\n    ")
     end
     for i = 1, fluids.max_fuels do
-        fluid_boxes = fluid_boxes .. string.gsub(gen_pipe_connection(complex.pipes["Fuel Input #"..i], size, fluids.fuel[i]), "\n", "\n    ")
+        fluid_boxes = fluid_boxes .. string.gsub(gen_pipe_connection(complex.pipes["Fuel Input #"..i], size, fluids.fuel[i], "input"), "\n", "\n    ")
     end
 
     return string.format(
@@ -124,7 +127,7 @@ entity.next_upgrade = nil
 entity.fluid_boxes = {%s
 }
 
-Complex_Gen.scale_graphics(entity, %s)
+Complex_Gen.scale_graphics(entity, {x=%s, y=%s})
 data:extend{entity}
 
 ]],
@@ -137,7 +140,8 @@ data:extend{entity}
         power.drain,
         power_type,
         fluid_boxes,
-        size.x / math.ceil(prototype.selection_box.right_bottom.x - prototype.selection_box.left_top.x)
+        size.x,
+        size.y
     )
 end
 
@@ -164,10 +168,18 @@ local function gen_category()
     return string.format(
 [[
 ---------------------------------------------  Recipe Category  ---------------------------------------------
-data:extend{{
-    type = "recipe-category",
-    name = name,
-}}
+data:extend{
+    {
+        type = "recipe-category",
+        name = name
+    },
+    {
+        type = "item-subgroup",
+        name = name,
+        group = "complex",
+        order = "c[" .. name .. "]"
+    },
+}
 
 ]]
     )
@@ -186,7 +198,8 @@ data:extend{{
     type = "recipe",
     name = name,
     category = "complexAssembler",
-    subgroup = "complex",
+    subgroup = name,
+    order = "a[" .. name .. "]",
     icon = entity.icon,
     icon_size = 64,
     enabled = true,
@@ -194,6 +207,8 @@ data:extend{{
     result = name,
     ingredients = %s
 }}
+
+Complex_Gen.update_complex_assembler(name)
 
 ]],
         string.gsub(serpent.block(craft, {indent = '    '}), "\n", "\n    ")
@@ -204,19 +219,22 @@ local function insert_fluid(recipe, list, input)
     for _, fluid in pairs(input) do
         local name = fluid.name
         local fluid = recipe[name]
-        if fluid ~= nil then
+        if fluid then
             for _, temp in pairs(fluid.temps) do
-                table.insert(
-                    list,
-                    {
-                        name=name,
-                        amount=temp.amount,
-                        type=fluid.type,
-                        minimum_temperature=temp.minimum_temperature,
-                        maximum_temperature=temp.maximum_temperature,
-                        temperature=temp.temperature,
-                    }
-                )
+                local temp = {
+                    name=name,
+                    amount=temp.amount,
+                    type=fluid.type,
+                    minimum_temperature=temp.minimum_temperature,
+                    maximum_temperature=temp.maximum_temperature,
+                    temperature=temp.temperature,
+                }
+
+                if temp.temperature == game.fluid_prototypes[name].default_temperature then
+                    temp.temperature = nil
+                end
+
+                table.insert(list, temp)
             end
         end
     end
@@ -270,7 +288,8 @@ local function gen_recipes(name, complex, pollution, fluids, graphics)
         type = "recipe",
         name = "%s",
         category = name,
-        subgroup = "complex-recipes",
+        subgroup = name,
+        order = "b[" .. name .. "]",
         %s,
         icon_size = 64,
         enabled = true,

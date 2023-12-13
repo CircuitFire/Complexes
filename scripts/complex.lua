@@ -9,7 +9,6 @@ complex
     .floors
     .graphics
     .pipes[name]
-        .in_out      -- "input", "output"
         .passthrough -- optional overrides in_out
         .positions[]
             .side   -- "top", "bottom", "left", "right"
@@ -167,7 +166,7 @@ function Complex:get_recipes()
 end
 
 function Complex:get_recipe_data(index)
-    if index == nil then return {name=self.name.." recipe", time=self.time} end
+    if index == nil then return {name="recipe", time=self.time} end
     return {name=self.sub_recipes[index].name, time=self.sub_recipes[index].time}
 end
 
@@ -295,7 +294,6 @@ function Complex:init_pipe_config(fluid, in_out)
     local offset = self:find_free_place(side)
 
     self.pipes[fluid] = {
-        in_out = in_out,
         positions = {
             {
                 side = side,
@@ -376,9 +374,22 @@ function Complex:size()
         size.area = size.area + (factories[name].area * factory.count)
     end
 
-    local x = math.ceil(math.sqrt(size.area / self.floors))
-    size.x = x
-    size.y = x
+    if self.graphics then
+        local box = game.entity_prototypes[self.graphics].selection_box
+        local base = {
+            x = math.ceil(box.right_bottom.x - box.left_top.x),
+            y = math.ceil(box.right_bottom.y - box.left_top.y),
+        }
+        base.area = base.x * base.y
+        local scale = math.sqrt((size.area / self.floors) / base.area)
+
+        size.x = math.ceil(base.x * scale)
+        size.y = math.ceil(base.y * scale)
+    else
+        local x = math.ceil(math.sqrt(size.area / self.floors))
+        size.x = x
+        size.y = x
+    end
 
     return size
 end
@@ -439,7 +450,7 @@ function Complex:craft()
     local ifl = settings.global["complex-internal-fluid-logistics"].value
     local eil = settings.global["complex-external-item-logistics"].value
     local efl = settings.global["complex-external-fluid-logistics"].value
-    local hil = settings.global["complex-internal-heat-logistics"].value * 1000000
+    local hil = settings.global["complex-internal-heat-logistics"].value-- * 1000000
 
     -- game.print("internal item:" .. tostring(logistics.internal.item / iil))
     -- game.print("internal fluid:" .. tostring(logistics.internal.fluid / ifl))

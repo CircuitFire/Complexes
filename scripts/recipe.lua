@@ -1,5 +1,7 @@
 --[[
 recipe
+    .name                        -- optional - for finding catalysts
+    .sub_recipes[name]           -- optional - for finding catalysts
     .input[name]
         .type                    -- "item", "fluid", "heat"
         .amount                  -- only item, heat
@@ -54,6 +56,10 @@ end
 function Recipe:merge(other)
     merge_side(self.input, other.input)
     merge_side(self.output, other.output)
+
+    if not other.name then return end
+    if not self.sub_recipes then self.sub_recipes = {} end
+    self.sub_recipes[other.name] = other
 end
 
 local function sort_temp_range(list)
@@ -433,3 +439,111 @@ function Recipe:round()
     round_one(self.input)
     round_one(self.output)
 end
+
+--------------------------------------------------------------------------------------------
+--[[
+    The goal is to find catalyst items that should be added to the complex recipe.
+    A recipe with a coolant loop should have coolant crafted into the complex because the recipe will not have it as an input or an output.
+    The problems are more complex loops and calculating how much of each item to add to the recipe.
+]]
+
+--[[
+local function in_out_graph(list)
+    local new = {}
+    local clean = self:clean()
+
+    for name, _ in pairs(list) do
+        new[name] = true
+    end
+    
+    return new
+end
+
+local function init_items(graph, list)
+    for name, _ in pairs(list) do
+        if not graph.items[name] then
+            if not graph.input[name] and not graph.output[name] then
+                graph.nether[name] = true
+            end
+            graph.items[name] = {
+                input = {},
+                output = {},
+            }
+        end
+    end
+end
+
+function Recipe:item_graph()
+    local graph = {
+        nether = {},
+        items = {},
+    }
+    local clean = self:clean()
+    graph.input = in_out_graph(clean.input)
+    graph.output = in_out_graph(clean.output)
+
+    for recipe, recipe_data in pairs(self.sub_recipes) do
+        init_items(graph, recipe_data.input)
+        init_items(graph, recipe_data.output)
+
+        for in_name, _ in pairs(recipe_data.input) do
+            for out_name, _ in pairs(recipe_data.output) do
+                graph.items[in_name].output[out_name] = recipe_data.name
+                graph.items[out_name].input[in_name] = recipe_data.name
+            end
+        end
+    end
+
+    return graph
+end
+
+function find_loop(graph, node_name, node, depth)
+    if node.searched and not node.depth then return end
+    if node.depth ~= nil then
+        return {looking_for=node_name, current_loop={}}
+    end
+
+    node.searched = true
+    node.depth = depth
+    local loops = {}
+    for output, connection in pairs(node.output) do
+        local loop = find_loop(graph, loops, graph.items[output], depth + 1)
+        if loop then
+            if loop.looking_for ~= nil then
+
+            end
+            if loop.looking_for == node_name then
+
+            else
+
+            end
+            if loop.loops then
+                for _, data in pairs(loop.loops) do
+
+                end
+            end
+        end
+    end
+    node.depth = nil
+
+    return
+end
+
+function Recipe:find_catalysts()
+    if not self.sub_recipes then return {} end
+    
+    local graph = self:item_graph()
+    local loops = {}
+    
+    for name, data in pairs(graph.nether) do
+        data.searched = true
+        data.depth = 1
+        for output, _ in pairs(data.output) do
+            local loop = find_loop(graph, graph.items[output], 2)
+        end
+        data.depth = nil
+    end
+    
+    return loops
+end
+]]

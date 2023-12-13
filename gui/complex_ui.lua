@@ -87,6 +87,73 @@ local function update_craft_list(window)
     update_size(window)
 end
 
+local function get_selected_fluid(window)
+    return window.pipe_config_index[window.pipe_editor_list.selected_index].name
+end
+
+local function get_selected_pipe(window)
+    return window.complex.pipes[get_selected_fluid(window)]
+end
+
+local function get_selected_connection(window)
+    return get_selected_pipe(window).positions[window.pipe_editor_selector.selected_index]
+end
+
+local function update_pipe_side(window, side)
+    for _, button in pairs(window.pipe_editor_buttons) do
+        button.state = false
+    end
+
+    window.pipe_editor_buttons[side].state = true
+end
+
+local function update_pipe_editor(window)
+    local data = get_selected_pipe(window)
+
+    window.passthrough_button.state = data.passthrough
+
+    window.pipe_editor_selector.clear_items()
+    for i, _ in pairs(data.positions) do
+        window.pipe_editor_selector.add_item(tostring(i))
+    end
+    window.pipe_editor_selector.selected_index = 1
+
+    update_pipe_side(window, get_selected_connection(window).side)
+    window.pipe_editor_position.text = tostring(get_selected_connection(window).offset)
+end
+
+local function update_fluid_list(window)
+    if window.pipe_editor_list == nil then return end
+
+    local list = window.pipe_editor_list
+    local fluids = window.complex:get_fluids()
+
+    list.clear_items()
+    window.pipe_config_index = {}
+    for name, _ in pairs(fluids.input) do
+        list.add_item("[fluid=" .. name .. "]")
+        table.insert(window.pipe_config_index, {name=name, type="input"})
+    end
+    for name, _ in pairs(fluids.output) do
+        list.add_item("[fluid=" .. name .. "]")
+        table.insert(window.pipe_config_index, {name=name, type="output"})
+    end
+    local count = 0
+    for i = 1, fluids.max_fuels do
+        name = "Fuel Input #" .. i
+        list.add_item(name)
+        table.insert(window.pipe_config_index, {name=name, type="input"})
+    end
+    list.selected_index = 1
+
+    --make sure all values have at least a default value
+    for _, fluid in pairs(window.pipe_config_index) do
+        window.complex:init_pipe_config(fluid.name, fluid.type)
+    end
+
+    update_pipe_editor(window)
+end
+
 local function update_in_out_list(window)
     input_list = window.input_list
     output_list = window.output_list
@@ -125,6 +192,8 @@ local function update_in_out_list(window)
             output_list.add_item("[" .. data.type .. "=" .. name .. "]: " .. data.amount)
         end
     end
+
+    update_fluid_list(window)
 end
 
 ---------------------------------------------  Factory Editor Functions  ---------------------------------------------
@@ -299,46 +368,11 @@ Events.text_changed.factory_editor_clock = function(event)
 end
 
 ---------------------------------------------  Pipe Editor Functions  ---------------------------------------------
-local function update_pipe_side(window, side)
-    for _, button in pairs(window.pipe_editor_buttons) do
-        button.state = false
-    end
-
-    window.pipe_editor_buttons[side].state = true
-end
-
-local function get_selected_fluid(window)
-    return window.pipe_config_index[window.pipe_editor_list.selected_index].name
-end
-
-local function get_selected_pipe(window)
-    return window.complex.pipes[get_selected_fluid(window)]
-end
-
-local function get_selected_connection(window)
-    return get_selected_pipe(window).positions[window.pipe_editor_selector.selected_index]
-end
-
 local function update_pipe_selected(window)
     local data = get_selected_connection(window)
 
     update_pipe_side(window, data.side)
     window.pipe_editor_position.text = tostring(data.offset)
-end
-
-local function update_pipe_editor(window)
-    local data = get_selected_pipe(window)
-
-    window.passthrough_button.state = data.passthrough
-
-    window.pipe_editor_selector.clear_items()
-    for i, _ in pairs(data.positions) do
-        window.pipe_editor_selector.add_item(tostring(i))
-    end
-    window.pipe_editor_selector.selected_index = 1
-
-    update_pipe_side(window, get_selected_connection(window).side)
-    window.pipe_editor_position.text = tostring(get_selected_connection(window).offset)
 end
 
 local function pipe_editor(window)
@@ -349,8 +383,7 @@ local function pipe_editor(window)
 
     local fluids = window.complex:get_fluids()
     --game.print("fluids: " .. serpent.block(fluids))
-    if table_size(fluids.input) == 0 and table_size(fluids.output) == 0 then return end
-    window.pipe_config_index = {}
+    if not next(fluids.input) and not next(fluids.output) then return end
 
     local top = window.mid_box.add{type="flow", direction="vertical"}
     top.style.width = 300
@@ -358,27 +391,6 @@ local function pipe_editor(window)
 
     local list = top.add{type="list-box", tags={func="pipe_editor_list_update"}, style="stretch_box"}
     window.pipe_editor_list = list
-
-    for name, _ in pairs(fluids.input) do
-        list.add_item("[fluid=" .. name .. "]")
-        table.insert(window.pipe_config_index, {name=name, type="input"})
-    end
-    for name, _ in pairs(fluids.output) do
-        list.add_item("[fluid=" .. name .. "]")
-        table.insert(window.pipe_config_index, {name=name, type="output"})
-    end
-    local count = 0
-    for i = 1, fluids.max_fuels do
-        name = "Fuel Input #" .. i
-        list.add_item(name)
-        table.insert(window.pipe_config_index, {name=name, type="input"})
-    end
-    list.selected_index = 1
-
-    --make sure all values have at least a default value
-    for _, fluid in pairs(window.pipe_config_index) do
-        window.complex:init_pipe_config(fluid.name, fluid.type)
-    end
 
     top.add{type="label", caption={"complex.pipe-editor-pipe-connections"}}
     window.pipe_editor_selector = top.add{type="drop-down", tags={func="pipe_editor_selector_update"}}
@@ -400,7 +412,7 @@ local function pipe_editor(window)
     top.add{type="label", caption={"complex.pipe-editor-position"}}
     window.pipe_editor_position = top.add{type="textfield", style="stretchable_textfield", text="fix me!", tags={func="pipe_editor_position_update"}, numeric=true}
 
-    update_pipe_editor(window)
+    update_fluid_list(window)
 end
 
 Events.selection_state_changed.pipe_editor_list_update = function(event)
@@ -614,16 +626,16 @@ local function sub_factory_editor(window)
     local bottom_box = sub_factory_editor.add{type="flow", direction="horizontal"}
     window.true_bottom_box = bottom_box
 
-    Gui_Lib.add_name_box(
+    window.recipe_name = Gui_Lib.add_name_box(
         recipe_box,
         "complex.complex-recipe-name",
         window.complex.sub_recipes[1].name,
         "update_recipe_name"
     )
-    Gui_Lib.add_name_box(
+    window.recipe_time = Gui_Lib.add_name_box(
         recipe_box,
         "complex.complex-speed",
-        tostring(window.complex.time),
+        tostring(selected_recipe(window).time),
         "update_complex_speed"
     )
 
@@ -649,6 +661,13 @@ local function sub_factory_editor(window)
     update_fuel_selector(window)
 end
 
+local function update_recipe_text_boxes(window)
+    local recipe = selected_recipe(window)
+
+    window.recipe_name.text = selected_recipe(window).name
+    window.recipe_time.text = tostring(selected_recipe(window).time)
+end
+
 Events.text_changed.update_recipe_name = function(event)
     local window = window(event)
 
@@ -657,6 +676,7 @@ end
 
 Events.selection_state_changed.recipe_list_select = function(event)
     local window = window(event)
+    update_recipe_text_boxes(window)
     update_fuel_factory_component_list(window)
     update_in_out_list(window)
 end
@@ -668,6 +688,10 @@ Events.gui_click.add_recipe = function(event)
     local index = window.recipe_list.selected_index + 1
     window.recipe_list.add_item(window.complex.sub_recipes[index].name)
     window.recipe_list.selected_index = index
+
+    update_recipe_text_boxes(window)
+    update_fuel_factory_component_list(window)
+    update_in_out_list(window)
 end
 
 Events.gui_click.remove_recipe = function(event)
@@ -680,6 +704,7 @@ Events.gui_click.remove_recipe = function(event)
 
     if index ~= 1 then index = index - 1 end
     window.recipe_list.selected_index = index
+    update_recipe_text_boxes(window)
     update_fuel_factory_component_list(window)
 end
 
@@ -738,7 +763,7 @@ local function open_complex(player_index)
     window.size = name_bar.add{type="label", caption={"complex.size", size.x, size.y}}
 
     if window.complex:multiple_recipes() == false then
-        Gui_Lib.add_name_box(
+        window.time = Gui_Lib.add_name_box(
             top_flow,
             "complex.complex-speed",
             tostring(window.complex.time),
@@ -816,7 +841,10 @@ Events.text_changed.update_complex_name = function(event)
 end
 
 Events.elem_changed.graphics_update = function(event)
-    window(event).complex.graphics = event.element.elem_value
+    local window = window(event)
+    window.complex.graphics = event.element.elem_value
+    local size = window.complex:size()
+    window.size.caption={"complex.size", size.x, size.y}
 end
 
 Events.selection_state_changed.factory_list_select = function(event)

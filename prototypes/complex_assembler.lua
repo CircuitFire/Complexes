@@ -84,7 +84,7 @@ entity.fluid_boxes = {
     },
 }
 
-Complex_Gen.scale_graphics(entity, 3)
+Complex_Gen.scale_graphics(entity, {x=9, y=9})
 data:extend{entity}
 
 ---------------------------------------------  Item  ---------------------------------------------
@@ -146,27 +146,30 @@ data:extend{{
         {
             amount = 10,
             name = "assembling-machine-3",
-            type = "item"
+        },
+        {
+            amount = 2,
+            name = "roboport",
+        },
+        {
+            amount = 50,
+            name = "construction-robot",
         },
         {
             amount = 1,
             name = "complex-structure",
-            type = "item"
         },
         {
             amount = 1,
             name = "complex-power",
-            type = "item"
         },
         {
             amount = 2,
             name = "complex-item-logistics",
-            type = "item"
         },
         {
             amount = 2,
             name = "complex-fluid-logistics",
-            type = "item"
         }
     }
 }}

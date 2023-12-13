@@ -39,7 +39,7 @@ local function gen_recipe(name, inputs)
         type = "recipe",
         name = name,
         enabled = true,
-        subgroup = "intermediate-product",
+        subgroup = "complexAssembler",
         energy_required=1,
         ingredients = inputs,
         results = {{

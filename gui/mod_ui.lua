@@ -104,7 +104,11 @@ Events.text_changed.update_mod_name = function(event)
 end
 
 Events.gui_click.open_mod_planner = function(event)
-    open_mod(event.player_index)
+    if window(event).window then
+        Gui_Lib.close(event.player_index, "mod_window")
+    else
+        open_mod(event.player_index)
+    end
 end
 
 Events.selection_state_changed.complex_complex_list = function(event)

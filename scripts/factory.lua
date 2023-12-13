@@ -7,6 +7,7 @@ factory
     .current_fuel -- temp value for calculating 
     .match -- optional "tries to match input or output need of the complex"
         .in_out = "input" (match with available input item), "output" (match with needed output item)
+        .amount -- trying to avoid rounding errors
         .level
         .type
         .get
@@ -317,6 +318,35 @@ function Factory.entity_id(entity)
     return name
 end
 
+function Factory:from_entity(entity, count)
+    local new = {}
+    setmetatable(new, self)
+
+    if count ~= nil then
+        new.count = count
+    else
+        new.count = 1
+    end
+
+    new.name = self.entity_id(entity)
+    new.prototype = get_prototype(entity)
+    new.modules = module_list(entity)
+    new.modifiers = calc_modifiers(new.modules)
+    new.power = simplify_power(new.prototype)
+    new.recipe = recipe_data(entity, new.power)
+
+    if new.power.type == "heat" then
+        new.recipe.input["complex-heat"] = {
+            type = "heat",
+            amount = new.power.usage
+        }
+    end
+
+    -- game.print("power: " .. serpent.block(new.power))
+
+    return new
+end
+
 function Factory:set_match(in_out, level, item, type)
     self.match = {
         in_out = in_out,
@@ -341,34 +371,6 @@ function Factory:set_level(new)
             fuel.match.level = fuel.match.level + level_change
         end
     end
-end
-
-function Factory:from_entity(entity, count)
-    local new = {}
-    setmetatable(new, self)
-
-    if count ~= nil then
-        new.count = count
-    else
-        new.count = 1
-    end
-
-    new.prototype = get_prototype(entity)
-    new.modules = module_list(entity)
-    new.modifiers = calc_modifiers(new.modules)
-    new.power = simplify_power(new.prototype)
-    new.recipe = recipe_data(entity, new.power)
-
-    if new.power.type == "heat" then
-        new.recipe.input["complex-heat"] = {
-            type = "heat",
-            amount = new.power.usage
-        }
-    end
-
-    -- game.print("power: " .. serpent.block(new.power))
-
-    return new
 end
 
 function Factory:inc_count(count)
@@ -459,33 +461,23 @@ function Factory:get_size()
     }
 end
 
-function Factory:get_recipe(time)
+function Factory:get_recipe(time, match_speed)
     local in_speed  = (self:get_clocked_input_speed() * time) / self.recipe.time
     local out_speed = (self:get_clocked_output_speed() * time) / self.recipe.time
 
     local recipe = Recipe:new()
+    recipe.name = self.name
 
     for name, data in pairs(self.recipe.input) do
-        recipe:set(
-            "input", {name = name},
-            {
-                type=data.type,
-                amount=in_speed * data.amount,
-                minimum_temperature = data.minimum_temperature,
-                maximum_temperature = data.maximum_temperature
-            }
-        )
+        local temp = table.deepcopy(data)
+        temp.amount = in_speed * temp.amount
+        recipe:set("input", {name = name}, temp)
     end
 
     for name, data in pairs(self.recipe.output) do
-        recipe:set(
-            "output", {name = name},
-            {
-                type=data.type,
-                amount=out_speed * data.amount,
-                temperature = data.temperature
-            }
-        )
+        local temp = table.deepcopy(data)
+        temp.amount = out_speed * temp.amount
+        recipe:set("output", {name = name}, temp)
     end
 
     if self.prototype.type == "reactor" and self.count >= 2 then
@@ -503,6 +495,13 @@ function Factory:get_recipe(time)
         recipe.output["complex-heat"].amount = self.recipe.output["complex-heat"].amount * new_speed
     end
 
+    if not match_speed and self.match and self.match.amount then
+        recipe[self.match.in_out][self.match.get.name] = nil
+        local temp = table.deepcopy(self.recipe[self.match.in_out][self.match.get.name])
+        temp.amount = self.match.amount
+        recipe:set(self.match.in_out, {name = self.match.get.name}, temp)
+    end
+
     return recipe
 end
 
@@ -515,27 +514,25 @@ function Factory:match_speed(item, time)
 
     self.modifiers.clock = 1
 
-    -- local amount = item.amount
-    -- local in_out = self.match.in_out
-    -- local item = self.match.get.name
-    -- local speed
-
-    -- if in_out == "input" then
-    --     speed = (self:get_input_speed() * time) / self.recipe.time
-    -- else
-    --     speed = (self:get_output_speed() * time) / self.recipe.time
-    -- end
-
-    local recipe = self:get_recipe(time)
-
+    local recipe = self:get_recipe(time, true)
     local max = recipe:get(self.match.in_out, self.match.get).amount
-
     local new_clock = item.amount / max
 
-    if new_clock > 1 then new_clock = 1 end
+    if new_clock > 1 then
+        new_clock = 1
+    end
+        
+    if new_clock < 1 then
+        self.match.amount = item.amount
+    else
+        self.match.amount = nil
+    end
+
 
     self.modifiers.clock = new_clock
-    self.current_fuel = self:fuel_requirement(time)
+    if self.power.fuels ~= nil then
+        self.current_fuel = self:fuel_requirement(time)
+    end
     return new_clock
 end
 

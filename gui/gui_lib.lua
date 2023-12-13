@@ -87,7 +87,7 @@ end
 function Gui_Lib.add_name_box(parent, label, text, func)
     local name_flow = parent.add{type="flow", direction="horizontal"}
     name_flow.add{type="label", caption={"", {label}, ": "}}
-    local complex_name = name_flow.add{type="textfield", text=text, style="stretchable_textfield", tags={func=func}}
+    return name_flow.add{type="textfield", text=text, style="stretchable_textfield", tags={func=func}}
 end
 
 function Gui_Lib.add_labeled_list(parent, label, func)
